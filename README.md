@@ -63,6 +63,13 @@ Developed for the NatLabRockies EnergyPlus v26.1 fork.
 
 ### Mac: installing the binary (no coding required)
 
+**First, remove the macOS quarantine flag** (required for all downloaded binaries):
+
+```bash
+xattr -d com.apple.quarantine binary_files/energyplus
+xattr -d com.apple.quarantine binary_files/libenergyplusapi.26.1.0.dylib
+```
+
 Make sure EnergyPlus 26.1 is already installed, then replace four files:
 
 ```bash
