@@ -1,0 +1,1216 @@
+! ============================================================
+!  test_chilled_water_ite.idf
+!
+!  Chilled-Water Liquid-Cooled Data Center
+!  ----------------------------------------
+!  Same building/zone/schedules as liquid_cooled_dc.idf.
+!  Plant: two-loop chilled-water system
+!    CHW loop  : Chiller:Electric:EIR (COP 5.5, rated at 12°C / 29.44°C)
+!                → ITE:LiquidCooled demand
+!    CW loop   : CoolingTower:SingleSpeed (wet, evaporative)
+!                → Chiller condenser demand
+!
+!  Design-point physics (at full load):
+!    IT CPU power    ≈ 3,000 kW  (5382 W/m² × 557.4 m²)
+!    Q_liquid        = CPU × 0.95  ≈ 2,850 kW  (5% air leakage)
+!    CHW supply      = 12°C,  return ≈ 15°C  (ΔT ≈ 3°C, V̇ = 0.225 m³/s)
+!    CDU approach    = 2°C   → rack supply = 14°C  (ASHRAE W4-class cold plate)
+!    Rack return     ≈ 26°C  (Q / ṁ_rack·cp ≈ 12°C rise at 0.060 m³/s)
+!    Chiller COP     ≈ 5.5 (rated) → ~6.1 at 12°C CHW (warmer than 6.67°C ref)
+!    Condenser heat  ≈ 2,850 × (1+1/5.5) ≈ 3,368 kW → rejected by wet tower
+!    CW supply       = 29°C,  CW return ≈ 35°C  (ΔT ≈ 6°C, V̇ = 0.220 m³/s)
+!    Tower wet-bulb  = 25.6°C (Tampa design), approach ≈ 3.9°C → CW supply 29.5°C
+!
+!  C++ object: ElectricEquipment:ITE:LiquidCooled (ITE_LiquidCooled.cc/.hh)
+!  HVAC:  ZoneHVAC:IdealLoadsAirSystem  (handles 5% air-side leakage)
+!  Water: CoolingTower evaporation + drift + blowdown → WUE > 0
+! ============================================================
+
+  Version,26.1;
+
+  Building,
+    LargeDataCenterHighITE-ChilledWater,
+    ,                        !- North Axis {deg}
+    City,                    !- Terrain
+    ,                        !- Loads Convergence Tolerance
+    ,                        !- Temperature Convergence Tolerance
+    ,                        !- Solar Distribution
+    ,                        !- Maximum Number of Warmup Days
+    ;                        !- Minimum Number of Warmup Days
+
+  Timestep,6;
+
+  SimulationControl,
+    No,                      !- Do Zone Sizing Calculation
+    No,                      !- Do System Sizing Calculation
+    Yes,                     !- Do Plant Sizing Calculation
+    No,                      !- Run Simulation for Sizing Periods
+    Yes,                     !- Run Simulation for Weather File Run Periods
+    No,                      !- Do HVAC Sizing Simulation for Sizing Periods
+    1;                       !- Maximum Number of HVAC Sizing Simulation Passes
+
+  HeatBalanceAlgorithm,ConductionTransferFunction,200;
+
+  RunPeriod,
+    Run Period 1,            !- Name
+    1,                       !- Begin Month
+    1,                       !- Begin Day of Month
+    2026,                    !- Begin Year
+    12,                      !- End Month
+    31,                      !- End Day of Month
+    2026,                    !- End Year
+    Thursday,                !- Day of Week for Start Day
+    No,                      !- Use Weather File Holidays and Special Days
+    No,                      !- Use Weather File Daylight Saving Period
+    No,                      !- Apply Weekend Holiday Rule
+    Yes,                     !- Use Weather File Rain Indicators
+    Yes;                     !- Use Weather File Snow Indicators
+
+  ShadowCalculation,
+    PolygonClipping,         !- Shading Calculation Method
+    Periodic,                !- Shading Calculation Update Frequency Method
+    20,                      !- Shading Calculation Update Frequency
+    15000,                   !- Maximum Figures in Shadow Overlap Calculations
+    SutherlandHodgman,       !- Polygon Clipping Algorithm
+    512,                     !- Pixel Counting Resolution
+    SimpleSkyDiffuseModeling,!- Sky Diffuse Modeling Algorithm
+    No,                      !- Output External Shading Calculation Results
+    No,                      !- Disable Self-Shading Within Shading Zone Groups
+    No;                      !- Disable Self-Shading From Shading Zone Groups to Other Zones
+
+  SurfaceConvectionAlgorithm:Inside,TARP;
+  SurfaceConvectionAlgorithm:Outside,TARP;
+
+  ! ── Site ─────────────────────────────────────────────────────
+
+  Site:Location,
+    Tampa-MacDill AFB_FL_USA,!- Name
+    27.85,                   !- Latitude {deg}
+    -82.52,                  !- Longitude {deg}
+    -5,                      !- Time Zone {hr}
+    8;                       !- Elevation {m}
+
+  Site:GroundTemperature:FCfactorMethod,24.2,18.9,15.7,13.6,15.5,17.1,21.2,26.9,27.6,27.9,27.4,26.2;
+
+  Site:WaterMainsTemperature,
+    Correlation,             !- Calculation Method
+    ,                        !- Temperature Schedule Name
+    21.85,                   !- Annual Average Outdoor Air Temperature {C}
+    14.3;                    !- Maximum Difference In Monthly Average Outdoor Air Temperatures {deltaC}
+
+  SizingPeriod:DesignDay,
+    Tampa-MacDill.AFB_FL_USA Ann Clg .4% Condns DB=>MWB,
+    8, 21, SummerDesignDay,
+    33.9, 7.9, DefaultMultipliers, ,
+    Wetbulb, 25.1, , , , ,
+    101229, 3.1, 270, No, No, No,
+    ASHRAETau, , , 0.491, 2.016, , , FullResetAtBeginEnvironment;
+
+  SizingPeriod:DesignDay,
+    Tampa-MacDill.AFB_FL_USA Ann Htg 99.6% Condns DB,
+    1, 21, WinterDesignDay,
+    4.6, 0, DefaultMultipliers, ,
+    Wetbulb, 4.6, , , , ,
+    101229, 2.5, 10, No, No, No,
+    ASHRAEClearSky, , , , , 0, , FullResetAtBeginEnvironment;
+
+  GlobalGeometryRules,
+    UpperLeftCorner,         !- Starting Vertex Position
+    Counterclockwise,        !- Vertex Entry Direction
+    Relative,                !- Coordinate System
+    Relative,                !- Daylighting Reference Point Coordinate System
+    Relative;                !- Rectangular Surface Coordinate System
+
+  ! ── Zone & Space ─────────────────────────────────────────────
+
+  Zone,
+    DataCenter ZN,           !- Name
+    -0, 0, 0, 0,             !- North Axis, X, Y, Z Origin
+    , 1, , , , , , Yes;      !- Type, Multiplier, ...
+
+  Space,
+    DataCenter,              !- Name
+    DataCenter ZN,           !- Zone Name
+    , , ,                    !- Ceiling Height, Volume, Floor Area
+    LargeDataCenterHighITE StandaloneDataCenter;  !- Space Type
+
+  SpaceList,
+    LargeDataCenterHighITE StandaloneDataCenter,
+    DataCenter;
+
+  ! ── Building Surfaces ────────────────────────────────────────
+
+  BuildingSurface:Detailed,
+    Surface 1, Floor,
+    Foundation F 126 Perim 9754 Area 55742,
+    DataCenter ZN, DataCenter,
+    GroundFCfactorMethod, , NoSun, NoWind, , ,
+    0,0,0, 0,18.288,0, 30.48,18.288,0, 30.48,0,0;
+
+  BuildingSurface:Detailed,
+    Surface 2, Wall,
+    Typical Insulated Steel Framed Exterior Wall R-11.9,
+    DataCenter ZN, DataCenter,
+    Outdoors, , SunExposed, WindExposed, , ,
+    0,18.288,4.2672, 0,18.288,0, 0,0,0, 0,0,4.2672;
+
+  BuildingSurface:Detailed,
+    Surface 3, Wall,
+    Typical Insulated Steel Framed Exterior Wall R-11.9,
+    DataCenter ZN, DataCenter,
+    Outdoors, , SunExposed, WindExposed, , ,
+    30.48,18.288,4.2672, 30.48,18.288,0, 0,18.288,0, 0,18.288,4.2672;
+
+  BuildingSurface:Detailed,
+    Surface 4, Wall,
+    Typical Insulated Steel Framed Exterior Wall R-11.9,
+    DataCenter ZN, DataCenter,
+    Outdoors, , SunExposed, WindExposed, , ,
+    30.48,0,4.2672, 30.48,0,0, 30.48,18.288,0, 30.48,18.288,4.2672;
+
+  BuildingSurface:Detailed,
+    Surface 5, Wall,
+    Typical Insulated Steel Framed Exterior Wall R-11.9,
+    DataCenter ZN, DataCenter,
+    Outdoors, , SunExposed, WindExposed, , ,
+    0,0,4.2672, 0,0,0, 30.48,0,0, 30.48,0,4.2672;
+
+  BuildingSurface:Detailed,
+    Surface 6, Roof,
+    Typical IEAD Roof - Highly Reflective R-25.64,
+    DataCenter ZN, DataCenter,
+    Outdoors, , SunExposed, WindExposed, , ,
+    30.48,0,4.2672, 30.48,18.288,4.2672, 0,18.288,4.2672, 0,0,4.2672;
+
+  ! ── Materials ────────────────────────────────────────────────
+
+  Material,
+    100mm Normalweight concrete floor, MediumSmooth,
+    0.1016, 2.31, 2322, 832, 0.9, 0.7, 0.7;
+  Material,
+    25mm Stucco, Smooth,
+    0.0254, 0.72, 1856, 840, 0.9, 0.7, 0.7;
+  Material,
+    5/8 in. Gypsum Board, MediumSmooth,
+    0.0159, 0.16, 800, 1090, 0.9, 0.7, 0.7;
+  Material,
+    8 in. Normalweight Concrete Floor, MediumRough,
+    0.2032, 2.31, 2322, 832, 0.9, 0.7, 0.7;
+  Material,
+    Metal Roof Surface, Smooth,
+    0.0008, 45.28, 7824, 500, 0.9, 0.7, 0.7;
+  Material:NoMass,
+    Typical Carpet Pad, Smooth, 0.21648, 0.9, 0.7, 0.8;
+  Material:NoMass,
+    Typical Insulation R-22.67, Smooth, 3.99201065296865, 0.9, 0.7, 0.7;
+  Material:NoMass,
+    Typical Insulation R-24.52, Smooth, 4.31888712432702, 0.9, 0.7, 0.7;
+  Material:NoMass,
+    Typical Insulation R-9.73, Smooth, 1.712828371834, 0.9, 0.7, 0.7;
+
+  Construction,
+    Typical IEAD Roof - Highly Reflective R-25.64,
+    Metal Roof Surface, Typical Insulation R-24.52, Metal Roof Surface;
+  Construction,
+    Typical Insulated Steel Framed Exterior Wall R-11.9,
+    25mm Stucco, 5/8 in. Gypsum Board, Typical Insulation R-9.73, 5/8 in. Gypsum Board;
+  Construction,
+    Typical Insulated Carpeted 8in Slab Floor,
+    8 in. Normalweight Concrete Floor, Typical Carpet Pad;
+  Construction:FfactorGroundFloor,
+    Foundation F 126 Perim 9754 Area 55742,
+    1.26343630645112, 557.41824, 97.536;
+
+  ! ── Schedule Type Limits ─────────────────────────────────────
+
+  ScheduleTypeLimits, Fractional, 0, 1, Continuous;
+  ScheduleTypeLimits, Always On Discrete Limits, 0, 1, Discrete, availability;
+  ScheduleTypeLimits, OnOff, 0, 1, Discrete, availability;
+  ScheduleTypeLimits, Temperature, , , Continuous, temperature;
+  ScheduleTypeLimits, DataCenter ZN Thermostat Schedule Type Limits, 0, 4, DISCRETE;
+
+  Schedule:Constant, Always On Discrete, Always On Discrete Limits, 1;
+
+  ! ── Lighting Schedule ────────────────────────────────────────
+
+  Schedule:Day:Interval,
+    DataCenter Lighting_SCH Default, Fractional, No, 24:00, 1;
+  Schedule:Week:Daily,
+    DataCenter Lighting_SCH Week Rule - Jan1-Dec31,
+    DataCenter Lighting_SCH Default, DataCenter Lighting_SCH Default,
+    DataCenter Lighting_SCH Default, DataCenter Lighting_SCH Default,
+    DataCenter Lighting_SCH Default, DataCenter Lighting_SCH Default,
+    DataCenter Lighting_SCH Default, DataCenter Lighting_SCH Default,
+    DataCenter Lighting_SCH Default, DataCenter Lighting_SCH Default,
+    DataCenter Lighting_SCH Default, DataCenter Lighting_SCH Default;
+  Schedule:Year,
+    DataCenter Lighting_SCH, Fractional,
+    DataCenter Lighting_SCH Week Rule - Jan1-Dec31, 1, 1, 12, 31;
+
+  ! ── Equipment Schedule ───────────────────────────────────────
+
+  Schedule:Day:Interval,
+    DataCenter Equipment_SCH Default,             Fractional, No, 24:00, 1;
+  Schedule:Day:Interval,
+    DataCenter Equipment_SCH Summer Design Day,   Fractional, No, 24:00, 1;
+  Schedule:Day:Interval,
+    DataCenter Equipment_SCH Winter Design Day,   Fractional, No, 24:00, 1;
+  Schedule:Day:Interval,
+    DataCenter Equipment_SCH Wknd|Wkdy Day,       Fractional, No, 24:00, 0.25;
+  Schedule:Day:Interval,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 1,     Fractional, No, 24:00, 0.5;
+  Schedule:Day:Interval,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 10,    Fractional, No, 24:00, 0.75;
+  Schedule:Day:Interval,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 11,    Fractional, No, 24:00, 1;
+  Schedule:Day:Interval,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 2,     Fractional, No, 24:00, 0.75;
+  Schedule:Day:Interval,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 3,     Fractional, No, 24:00, 1;
+  Schedule:Day:Interval,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 4,     Fractional, No, 24:00, 0.25;
+  Schedule:Day:Interval,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 5,     Fractional, No, 24:00, 0.5;
+  Schedule:Day:Interval,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 6,     Fractional, No, 24:00, 0.75;
+  Schedule:Day:Interval,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 7,     Fractional, No, 24:00, 1;
+  Schedule:Day:Interval,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 8,     Fractional, No, 24:00, 0.25;
+  Schedule:Day:Interval,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 9,     Fractional, No, 24:00, 0.5;
+
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Jan1-Jan28,
+    DataCenter Equipment_SCH Wknd|Wkdy Day, DataCenter Equipment_SCH Wknd|Wkdy Day,
+    DataCenter Equipment_SCH Wknd|Wkdy Day, DataCenter Equipment_SCH Wknd|Wkdy Day,
+    DataCenter Equipment_SCH Wknd|Wkdy Day, DataCenter Equipment_SCH Wknd|Wkdy Day,
+    DataCenter Equipment_SCH Wknd|Wkdy Day, DataCenter Equipment_SCH Default,
+    DataCenter Equipment_SCH Summer Design Day, DataCenter Equipment_SCH Winter Design Day,
+    DataCenter Equipment_SCH Default, DataCenter Equipment_SCH Default;
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Jan29-Feb4,
+    DataCenter Equipment_SCH Wknd|Wkdy Day, DataCenter Equipment_SCH Wknd|Wkdy Day,
+    DataCenter Equipment_SCH Wknd|Wkdy Day, DataCenter Equipment_SCH Wknd|Wkdy Day 1,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 1, DataCenter Equipment_SCH Wknd|Wkdy Day 1,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 1, DataCenter Equipment_SCH Default,
+    DataCenter Equipment_SCH Summer Design Day, DataCenter Equipment_SCH Winter Design Day,
+    DataCenter Equipment_SCH Default, DataCenter Equipment_SCH Default;
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Feb5-Feb25,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 1, DataCenter Equipment_SCH Wknd|Wkdy Day 1,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 1, DataCenter Equipment_SCH Wknd|Wkdy Day 1,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 1, DataCenter Equipment_SCH Wknd|Wkdy Day 1,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 1, DataCenter Equipment_SCH Default,
+    DataCenter Equipment_SCH Summer Design Day, DataCenter Equipment_SCH Winter Design Day,
+    DataCenter Equipment_SCH Default, DataCenter Equipment_SCH Default;
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Feb26-Mar4,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 1, DataCenter Equipment_SCH Wknd|Wkdy Day 1,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 1, DataCenter Equipment_SCH Wknd|Wkdy Day 2,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 2, DataCenter Equipment_SCH Wknd|Wkdy Day 2,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 2, DataCenter Equipment_SCH Default,
+    DataCenter Equipment_SCH Summer Design Day, DataCenter Equipment_SCH Winter Design Day,
+    DataCenter Equipment_SCH Default, DataCenter Equipment_SCH Default;
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Mar5-Mar25,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 2, DataCenter Equipment_SCH Wknd|Wkdy Day 2,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 2, DataCenter Equipment_SCH Wknd|Wkdy Day 2,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 2, DataCenter Equipment_SCH Wknd|Wkdy Day 2,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 2, DataCenter Equipment_SCH Default,
+    DataCenter Equipment_SCH Summer Design Day, DataCenter Equipment_SCH Winter Design Day,
+    DataCenter Equipment_SCH Default, DataCenter Equipment_SCH Default;
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Mar26-Apr1,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 2, DataCenter Equipment_SCH Wknd|Wkdy Day 2,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 2, DataCenter Equipment_SCH Wknd|Wkdy Day 2,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 2, DataCenter Equipment_SCH Wknd|Wkdy Day 2,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 3, DataCenter Equipment_SCH Default,
+    DataCenter Equipment_SCH Summer Design Day, DataCenter Equipment_SCH Winter Design Day,
+    DataCenter Equipment_SCH Default, DataCenter Equipment_SCH Default;
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Apr2-Apr29,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 3, DataCenter Equipment_SCH Wknd|Wkdy Day 3,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 3, DataCenter Equipment_SCH Wknd|Wkdy Day 3,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 3, DataCenter Equipment_SCH Wknd|Wkdy Day 3,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 3, DataCenter Equipment_SCH Default,
+    DataCenter Equipment_SCH Summer Design Day, DataCenter Equipment_SCH Winter Design Day,
+    DataCenter Equipment_SCH Default, DataCenter Equipment_SCH Default;
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Apr30-May6,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 3, DataCenter Equipment_SCH Wknd|Wkdy Day 4,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 4, DataCenter Equipment_SCH Wknd|Wkdy Day 4,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 4, DataCenter Equipment_SCH Wknd|Wkdy Day 4,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 4, DataCenter Equipment_SCH Default,
+    DataCenter Equipment_SCH Summer Design Day, DataCenter Equipment_SCH Winter Design Day,
+    DataCenter Equipment_SCH Default, DataCenter Equipment_SCH Default;
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - May7-May27,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 4, DataCenter Equipment_SCH Wknd|Wkdy Day 4,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 4, DataCenter Equipment_SCH Wknd|Wkdy Day 4,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 4, DataCenter Equipment_SCH Wknd|Wkdy Day 4,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 4, DataCenter Equipment_SCH Default,
+    DataCenter Equipment_SCH Summer Design Day, DataCenter Equipment_SCH Winter Design Day,
+    DataCenter Equipment_SCH Default, DataCenter Equipment_SCH Default;
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - May28-Jun3,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 4, DataCenter Equipment_SCH Wknd|Wkdy Day 4,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 4, DataCenter Equipment_SCH Wknd|Wkdy Day 4,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 5, DataCenter Equipment_SCH Wknd|Wkdy Day 5,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 5, DataCenter Equipment_SCH Default,
+    DataCenter Equipment_SCH Summer Design Day, DataCenter Equipment_SCH Winter Design Day,
+    DataCenter Equipment_SCH Default, DataCenter Equipment_SCH Default;
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Jun4-Jun24,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 5, DataCenter Equipment_SCH Wknd|Wkdy Day 5,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 5, DataCenter Equipment_SCH Wknd|Wkdy Day 5,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 5, DataCenter Equipment_SCH Wknd|Wkdy Day 5,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 5, DataCenter Equipment_SCH Default,
+    DataCenter Equipment_SCH Summer Design Day, DataCenter Equipment_SCH Winter Design Day,
+    DataCenter Equipment_SCH Default, DataCenter Equipment_SCH Default;
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Jun25-Jul1,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 5, DataCenter Equipment_SCH Wknd|Wkdy Day 5,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 5, DataCenter Equipment_SCH Wknd|Wkdy Day 5,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 5, DataCenter Equipment_SCH Wknd|Wkdy Day 5,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 6, DataCenter Equipment_SCH Default,
+    DataCenter Equipment_SCH Summer Design Day, DataCenter Equipment_SCH Winter Design Day,
+    DataCenter Equipment_SCH Default, DataCenter Equipment_SCH Default;
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Jul2-Jul29,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 6, DataCenter Equipment_SCH Wknd|Wkdy Day 6,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 6, DataCenter Equipment_SCH Wknd|Wkdy Day 6,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 6, DataCenter Equipment_SCH Wknd|Wkdy Day 6,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 6, DataCenter Equipment_SCH Default,
+    DataCenter Equipment_SCH Summer Design Day, DataCenter Equipment_SCH Winter Design Day,
+    DataCenter Equipment_SCH Default, DataCenter Equipment_SCH Default;
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Jul30-Aug5,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 6, DataCenter Equipment_SCH Wknd|Wkdy Day 6,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 7, DataCenter Equipment_SCH Wknd|Wkdy Day 7,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 7, DataCenter Equipment_SCH Wknd|Wkdy Day 7,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 7, DataCenter Equipment_SCH Default,
+    DataCenter Equipment_SCH Summer Design Day, DataCenter Equipment_SCH Winter Design Day,
+    DataCenter Equipment_SCH Default, DataCenter Equipment_SCH Default;
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Aug6-Aug26,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 7, DataCenter Equipment_SCH Wknd|Wkdy Day 7,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 7, DataCenter Equipment_SCH Wknd|Wkdy Day 7,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 7, DataCenter Equipment_SCH Wknd|Wkdy Day 7,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 7, DataCenter Equipment_SCH Default,
+    DataCenter Equipment_SCH Summer Design Day, DataCenter Equipment_SCH Winter Design Day,
+    DataCenter Equipment_SCH Default, DataCenter Equipment_SCH Default;
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Aug27-Sep2,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 7, DataCenter Equipment_SCH Wknd|Wkdy Day 7,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 7, DataCenter Equipment_SCH Wknd|Wkdy Day 7,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 7, DataCenter Equipment_SCH Wknd|Wkdy Day 8,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 8, DataCenter Equipment_SCH Default,
+    DataCenter Equipment_SCH Summer Design Day, DataCenter Equipment_SCH Winter Design Day,
+    DataCenter Equipment_SCH Default, DataCenter Equipment_SCH Default;
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Sep3-Sep30,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 8, DataCenter Equipment_SCH Wknd|Wkdy Day 8,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 8, DataCenter Equipment_SCH Wknd|Wkdy Day 8,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 8, DataCenter Equipment_SCH Wknd|Wkdy Day 8,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 8, DataCenter Equipment_SCH Default,
+    DataCenter Equipment_SCH Summer Design Day, DataCenter Equipment_SCH Winter Design Day,
+    DataCenter Equipment_SCH Default, DataCenter Equipment_SCH Default;
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Oct1-Oct28,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 9, DataCenter Equipment_SCH Wknd|Wkdy Day 9,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 9, DataCenter Equipment_SCH Wknd|Wkdy Day 9,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 9, DataCenter Equipment_SCH Wknd|Wkdy Day 9,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 9, DataCenter Equipment_SCH Default,
+    DataCenter Equipment_SCH Summer Design Day, DataCenter Equipment_SCH Winter Design Day,
+    DataCenter Equipment_SCH Default, DataCenter Equipment_SCH Default;
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Oct29-Nov4,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 9, DataCenter Equipment_SCH Wknd|Wkdy Day 9,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 9, DataCenter Equipment_SCH Wknd|Wkdy Day 10,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 10, DataCenter Equipment_SCH Wknd|Wkdy Day 10,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 10, DataCenter Equipment_SCH Default,
+    DataCenter Equipment_SCH Summer Design Day, DataCenter Equipment_SCH Winter Design Day,
+    DataCenter Equipment_SCH Default, DataCenter Equipment_SCH Default;
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Nov5-Nov25,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 10, DataCenter Equipment_SCH Wknd|Wkdy Day 10,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 10, DataCenter Equipment_SCH Wknd|Wkdy Day 10,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 10, DataCenter Equipment_SCH Wknd|Wkdy Day 10,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 10, DataCenter Equipment_SCH Default,
+    DataCenter Equipment_SCH Summer Design Day, DataCenter Equipment_SCH Winter Design Day,
+    DataCenter Equipment_SCH Default, DataCenter Equipment_SCH Default;
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Nov26-Dec2,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 10, DataCenter Equipment_SCH Wknd|Wkdy Day 10,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 10, DataCenter Equipment_SCH Wknd|Wkdy Day 10,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 10, DataCenter Equipment_SCH Wknd|Wkdy Day 11,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 11, DataCenter Equipment_SCH Default,
+    DataCenter Equipment_SCH Summer Design Day, DataCenter Equipment_SCH Winter Design Day,
+    DataCenter Equipment_SCH Default, DataCenter Equipment_SCH Default;
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Dec3-Dec31,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 11, DataCenter Equipment_SCH Wknd|Wkdy Day 11,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 11, DataCenter Equipment_SCH Wknd|Wkdy Day 11,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 11, DataCenter Equipment_SCH Wknd|Wkdy Day 11,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 11, DataCenter Equipment_SCH Default,
+    DataCenter Equipment_SCH Summer Design Day, DataCenter Equipment_SCH Winter Design Day,
+    DataCenter Equipment_SCH Default, DataCenter Equipment_SCH Default;
+
+  Schedule:Year,
+    DataCenter Equipment_SCH, Fractional,
+    DataCenter Equipment_SCH Week Rule - Jan1-Jan28,   1,  1,  1, 28,
+    DataCenter Equipment_SCH Week Rule - Jan29-Feb4,   1, 29,  2,  4,
+    DataCenter Equipment_SCH Week Rule - Feb5-Feb25,   2,  5,  2, 25,
+    DataCenter Equipment_SCH Week Rule - Feb26-Mar4,   2, 26,  3,  4,
+    DataCenter Equipment_SCH Week Rule - Mar5-Mar25,   3,  5,  3, 25,
+    DataCenter Equipment_SCH Week Rule - Mar26-Apr1,   3, 26,  4,  1,
+    DataCenter Equipment_SCH Week Rule - Apr2-Apr29,   4,  2,  4, 29,
+    DataCenter Equipment_SCH Week Rule - Apr30-May6,   4, 30,  5,  6,
+    DataCenter Equipment_SCH Week Rule - May7-May27,   5,  7,  5, 27,
+    DataCenter Equipment_SCH Week Rule - May28-Jun3,   5, 28,  6,  3,
+    DataCenter Equipment_SCH Week Rule - Jun4-Jun24,   6,  4,  6, 24,
+    DataCenter Equipment_SCH Week Rule - Jun25-Jul1,   6, 25,  7,  1,
+    DataCenter Equipment_SCH Week Rule - Jul2-Jul29,   7,  2,  7, 29,
+    DataCenter Equipment_SCH Week Rule - Jul30-Aug5,   7, 30,  8,  5,
+    DataCenter Equipment_SCH Week Rule - Aug6-Aug26,   8,  6,  8, 26,
+    DataCenter Equipment_SCH Week Rule - Aug27-Sep2,   8, 27,  9,  2,
+    DataCenter Equipment_SCH Week Rule - Sep3-Sep30,   9,  3,  9, 30,
+    DataCenter Equipment_SCH Week Rule - Oct1-Oct28,  10,  1, 10, 28,
+    DataCenter Equipment_SCH Week Rule - Oct29-Nov4,  10, 29, 11,  4,
+    DataCenter Equipment_SCH Week Rule - Nov5-Nov25,  11,  5, 11, 25,
+    DataCenter Equipment_SCH Week Rule - Nov26-Dec2,  11, 26, 12,  2,
+    DataCenter Equipment_SCH Week Rule - Dec3-Dec31,  12,  3, 12, 31;
+
+  ! ── Thermostat Schedules ─────────────────────────────────────
+
+  Schedule:Compact,
+    DataCenter ZN Thermostat Schedule, DataCenter ZN Thermostat Schedule Type Limits,
+    Through: 12/31, For: AllDays, Until: 24:00, 4;
+
+  Schedule:Day:Interval,
+    DataCenter HTGSETP_SCH Default, Temperature, No, 24:00, 15;
+  Schedule:Week:Daily,
+    DataCenter HTGSETP_SCH Week Rule - Jan1-Dec31,
+    DataCenter HTGSETP_SCH Default, DataCenter HTGSETP_SCH Default,
+    DataCenter HTGSETP_SCH Default, DataCenter HTGSETP_SCH Default,
+    DataCenter HTGSETP_SCH Default, DataCenter HTGSETP_SCH Default,
+    DataCenter HTGSETP_SCH Default, DataCenter HTGSETP_SCH Default,
+    DataCenter HTGSETP_SCH Default, DataCenter HTGSETP_SCH Default,
+    DataCenter HTGSETP_SCH Default, DataCenter HTGSETP_SCH Default;
+  Schedule:Year,
+    DataCenter HTGSETP_SCH, Temperature,
+    DataCenter HTGSETP_SCH Week Rule - Jan1-Dec31, 1, 1, 12, 31;
+
+  Schedule:Day:Interval,
+    DataCenter CLGSETP_SCH Default, Temperature, No, 24:00, 35;
+  Schedule:Week:Daily,
+    DataCenter CLGSETP_SCH Week Rule - Jan1-Dec31,
+    DataCenter CLGSETP_SCH Default, DataCenter CLGSETP_SCH Default,
+    DataCenter CLGSETP_SCH Default, DataCenter CLGSETP_SCH Default,
+    DataCenter CLGSETP_SCH Default, DataCenter CLGSETP_SCH Default,
+    DataCenter CLGSETP_SCH Default, DataCenter CLGSETP_SCH Default,
+    DataCenter CLGSETP_SCH Default, DataCenter CLGSETP_SCH Default,
+    DataCenter CLGSETP_SCH Default, DataCenter CLGSETP_SCH Default;
+  Schedule:Year,
+    DataCenter CLGSETP_SCH, Temperature,
+    DataCenter CLGSETP_SCH Week Rule - Jan1-Dec31, 1, 1, 12, 31;
+
+  ! CHW loop supply setpoint: 12°C
+  Schedule:Compact,
+    CHW Supply Temp Setpoint Schedule, Temperature,
+    Through: 12/31, For: AllDays, Until: 24:00, 12.0;
+
+  ! CW (condenser) loop supply setpoint: wet bulb + 3°C approach, clamped [18, 29°C]
+  !   Prevents over-cooling in winter (chiller compressor protection floor: 18°C)
+  !   Allows reset above 29°C in peak summer when wet bulb > 26°C
+
+  ! ── Lights ───────────────────────────────────────────────────
+
+  Lights,
+    LargeDataCenterHighITE StandaloneDataCenter Lights,
+    LargeDataCenterHighITE StandaloneDataCenter,
+    DataCenter Lighting_SCH,
+    Watts/Area, , 6.88890266669422, ,
+    0, 0.7, 0.2, 0, General;
+
+  ! ── ElectricEquipment:ITE:LiquidCooled ───────────────────────
+  !  Chilled-water design:
+  !    CHW supply (FWS) = 12°C,  CDU approach = 2°C → rack supply = 14°C
+  !    Rack return ≈ 34°C  (Q_liquid / C_rack ≈ 20°C rise at 0.024 m³/s)
+  !    Junction temp = rack_supply + Q_per_unit × R_jc
+  !      NumUnits = 71 racks (~29 kW/rack); R_jc = 0.001 K/W (rack-level per IDD guidance)
+  !      → q_per_unit ≈ 29 kW, ΔT_junc ≈ 29°C, T_junc ≈ 43°C
+
+  ElectricEquipment:ITE:LiquidCooled,
+    LargeDataCenterHighITE StandaloneDataCenter ITE LiquidCooled 1,  !- Name
+    DataCenter,              !- Zone or Space Name
+    Watts/Area,              !- Design Power Input Calculation Method
+    ,                        !- Watts per Unit {W}
+    71,                      !- Number of Units  (~30 kW/rack, 2.14 MW total)
+    3844.69356,              !- Watts per Floor Area {W/m2}
+    DataCenter Equipment_SCH,!- Design Power Input Schedule Name
+    Always On Discrete,      !- CPU Loading Schedule Name
+    ,                        !- CPU Power Input Function Curve (blank = linear f=load)
+    12.0,                    !- Facility Water Design Supply Temperature {C}  (chilled water)
+    0.097,                   !- Facility Water Design Volumetric Flow Rate {m3/s}  (2.036 MW / (ρ·cp·5°C))
+    ITE FWS Inlet Node,      !- Facility Water Coolant Inlet Node Name
+    ITE FWS Outlet Node,     !- Facility Water Coolant Outlet Node Name
+    0.024,                   !- Rack Coolant Design Volumetric Flow Rate {m3/s}  (2.036 MW / (ρ·cp·20°C))
+    14.0,                    !- Rack Coolant Design Supply Temperature {C}  (12+2=14°C)
+    2.0,                     !- CDU Approach Temperature {deltaC}
+    0.001,                   !- Thermal Resistance Junction to Coolant {K/W}  (rack-level)
+    90.0,                    !- Maximum Junction Temperature {C}
+    0.20,                    !- Air Side Heat Leakage Fraction (20% — moderate containment, no rear-door HX)
+    0.94,                    !- UPS Efficiency
+    1.0,                     !- Fraction of UPS Losses to Zone (UPS collocated in data hall)
+    ITE-CPU,                 !- CPU End-Use Subcategory
+    ITE-UPS;                 !- UPS End-Use Subcategory
+
+  ! ── Zone HVAC: IdealLoadsAirSystem (handles 5% air-leakage) ──
+
+  ZoneControl:Thermostat,
+    DataCenter ZN Thermostat,
+    DataCenter ZN,
+    DataCenter ZN Thermostat Schedule,
+    ThermostatSetpoint:DualSetpoint,
+    DC Thermostat Dual,
+    , , , , , 0;
+
+  ThermostatSetpoint:DualSetpoint,
+    DC Thermostat Dual,
+    DataCenter HTGSETP_SCH,
+    DataCenter CLGSETP_SCH;
+
+  ZoneHVAC:EquipmentConnections,
+    DataCenter ZN,
+    DataCenter ZN Equipment List,
+    DataCenter ZN Inlet Node List,
+    DataCenter ZN Exhaust Node List,           !- Zone Air Exhaust Node or NodeList Name (CRAH inlet)
+    DataCenter ZN Zone Air Node,
+    DataCenter ZN Return Node List;
+
+  NodeList, DataCenter ZN Inlet Node List,    DC CRAH Supply Air Node;
+  NodeList, DataCenter ZN Exhaust Node List,  DC CRAH Air Inlet Node;
+  NodeList, DataCenter ZN Return Node List,   DataCenter ZN Return Air Node;
+
+  ! ── Zone air-side equipment ────────────────────────────────────
+  !  IdealLoads removed.  Residual zone load (5% ITE air leakage +
+  !  6% UPS losses + lights + envelope ≈ 230 kW peak) is now handled
+  !  by ZoneHVAC:FourPipeFanCoil "DC CRAH", drawing CHW from the
+  !  existing CHW Loop demand side (parallel to the ITE liquid coil).
+  !  Fan electricity → Fans:Electricity meter; coil load → CHW chiller
+  !  → Cooling:Electricity meter.  DistrictCooling is no longer used.
+
+  ZoneHVAC:EquipmentList,
+    DataCenter ZN Equipment List,        !- Name
+    SequentialLoad,                      !- Load Distribution Scheme
+    ZoneHVAC:FourPipeFanCoil,            !- Zone Equipment 1 Object Type
+    DC CRAH,                             !- Zone Equipment 1 Name
+    1, 1, , ;
+
+  Sizing:Zone,
+    DataCenter ZN,                       !- Zone Name
+    SupplyAirTemperature, 18.0, 11.11,   !- Cooling design supply: 18°C
+    SupplyAirTemperature, 40.0, 11.11,   !- Heating design supply: 40°C (rarely active in DC)
+    0.009, 0.004,                        !- Cooling/Heating supply humidity ratios
+    ,                                    !- DSOA Object Name (no OA in DC zone)
+    ,, DesignDay, 0, 0, 0, 0,            !- Cooling air-flow method
+    DesignDay, 0, 0, 0, 0;               !- Heating air-flow method
+
+  ZoneHVAC:FourPipeFanCoil,
+    DC CRAH,                             !- Name
+    Always On Discrete,                  !- Availability Schedule Name
+    VariableFanVariableFlow,             !- Capacity Control Method
+    36.0,                                !- Maximum Supply Air Flow Rate {m3/s}  (~600 kW @ 14°C ΔT_air)
+    0.2,                                 !- Low Speed Supply Air Flow Ratio
+    0.5,                                 !- Medium Speed Supply Air Flow Ratio
+    0,                                   !- Maximum Outdoor Air Flow Rate {m3/s}  (no OA)
+    ,                                    !- Outdoor Air Schedule Name
+    DC CRAH Air Inlet Node,              !- Air Inlet Node Name (= zone exhaust)
+    DC CRAH Supply Air Node,             !- Air Outlet Node Name
+    OutdoorAir:Mixer,                    !- Outdoor Air Mixer Object Type
+    DC CRAH OA Mixer,                    !- Outdoor Air Mixer Name
+    Fan:VariableVolume,                  !- Supply Air Fan Object Type
+    DC CRAH Fan,                         !- Supply Air Fan Name
+    Coil:Cooling:Water,                  !- Cooling Coil Object Type
+    DC CRAH Cooling Coil,                !- Cooling Coil Name
+    0.024,                               !- Maximum Cold Water Flow Rate {m3/s}  (~600 kW @ 6°C ΔT_water)
+    0.0,                                 !- Minimum Cold Water Flow Rate {m3/s}
+    0.001,                               !- Cooling Convergence Tolerance
+    Coil:Heating:Electric,               !- Heating Coil Object Type
+    DC CRAH Heating Coil,                !- Heating Coil Name
+    0,                                   !- Maximum Hot Water Flow Rate (unused for elec)
+    0,                                   !- Minimum Hot Water Flow Rate (unused)
+    0.001,                               !- Heating Convergence Tolerance
+    ,                                    !- Availability Manager List Name
+    ,                                    !- Design Specification ZoneHVAC Sizing Object
+    ,                                    !- Supply Air Fan Operating Mode Schedule
+    ,                                    !- Minimum Supply Air Temperature in Cooling Mode {C}
+    ;                                    !- Maximum Supply Air Temperature in Heating Mode {C}
+
+  OutdoorAir:Mixer,
+    DC CRAH OA Mixer,                    !- Name
+    DC CRAH Mixed Air Node,              !- Mixed Air Node Name
+    DC CRAH OA Inlet Node,               !- Outdoor Air Stream Node Name
+    DC CRAH Relief Air Node,             !- Relief Air Stream Node Name
+    DC CRAH Air Inlet Node;              !- Return Air Stream Node Name (= zone exhaust)
+
+  OutdoorAir:NodeList,
+    DC CRAH OA Inlet Node;               !- (Maximum OA = 0, but node still required by mixer)
+
+  ! Air path inside FourPipeFanCoil (blow-through, default):
+  !   OA Mixer → Fan → Cooling Coil → Heating Coil → Supply
+
+  Fan:VariableVolume,
+    DC CRAH Fan,                         !- Name
+    Always On Discrete,                  !- Availability Schedule Name
+    0.65,                                !- Fan Total Efficiency
+    750,                                 !- Pressure Rise {Pa}  (typical CRAH ~750 Pa)
+    36.0,                                !- Maximum Flow Rate {m3/s}  (matches FanCoil max)
+    Fraction,                            !- Fan Power Minimum Flow Rate Input Method
+    0.2,                                 !- Fan Power Minimum Flow Fraction
+    0,                                   !- Fan Power Minimum Air Flow Rate {m3/s}
+    0.93,                                !- Motor Efficiency
+    1.0,                                 !- Motor In Airstream Fraction
+    0.0407,                              !- Fan Power Coefficient 1  (cubic VAV curve)
+    0.0,                                 !- Fan Power Coefficient 2
+    0.9821,                              !- Fan Power Coefficient 3
+    -0.0228,                             !- Fan Power Coefficient 4
+    0,                                   !- Fan Power Coefficient 5
+    DC CRAH Mixed Air Node,              !- Air Inlet Node Name
+    DC CRAH Fan Outlet Node,             !- Air Outlet Node Name
+    HVAC;                                !- End-Use Subcategory
+
+  Coil:Cooling:Water,
+    DC CRAH Cooling Coil,                !- Name
+    Always On Discrete,                  !- Availability Schedule Name
+    0.024,                               !- Design Water Flow Rate {m3/s}
+    36.0,                                !- Design Air Flow Rate {m3/s}
+    12.0,                                !- Design Inlet Water Temperature {C}  (matches CHW supply)
+    32.0,                                !- Design Inlet Air Temperature {C}  (zone return on hot day)
+    18.0,                                !- Design Outlet Air Temperature {C}
+    0.012,                               !- Design Inlet Air Humidity Ratio
+    0.010,                               !- Design Outlet Air Humidity Ratio
+    DC CRAH Coil Water Inlet Node,       !- Water Inlet Node Name
+    DC CRAH Coil Water Outlet Node,      !- Water Outlet Node Name
+    DC CRAH Fan Outlet Node,             !- Air Inlet Node Name
+    DC CRAH Cool Coil Air Out Node,      !- Air Outlet Node Name
+    SimpleAnalysis,                      !- Type of Analysis
+    CrossFlow;                           !- Heat Exchanger Configuration
+
+  Coil:Heating:Electric,
+    DC CRAH Heating Coil,                !- Name
+    Always On Discrete,                  !- Availability Schedule Name
+    1.0,                                 !- Efficiency
+    1.0,                                 !- Nominal Capacity {W}  (essentially disabled — DC never heats)
+    DC CRAH Cool Coil Air Out Node,      !- Air Inlet Node Name
+    DC CRAH Supply Air Node;             !- Air Outlet Node Name
+
+  SetpointManager:Scheduled,
+    DC CRAH Supply Air Setpoint Manager, !- Name
+    Temperature,                         !- Control Variable
+    DC CRAH Supply Air Temp Sch,         !- Schedule Name
+    DC CRAH Supply Air Node;             !- Setpoint Node
+
+  Schedule:Compact,
+    DC CRAH Supply Air Temp Sch, Temperature,
+    Through: 12/31, For: AllDays, Until: 24:00, 18.0;
+
+  ! ── Chiller Performance Curves ───────────────────────────────
+  !  All three curves are normalized to 1.0 at reference conditions:
+  !    CHW leaving = 12°C,  CW entering = 29.44°C
+  !
+  !  CapFuncTemp = 1.3488 + 0.02·Tchws − 0.02·Tcwe
+  !    (+2%/°C warmer CHW supply, −2%/°C warmer CW entering)
+  !  EIRFuncTemp = 0.4768 − 0.03·Tchws + 0.03·Tcwe
+  !    (better COP at warmer CHW supply, worse COP at warmer CW)
+  !  EIRFuncPLR  = 0.1 + 0.5·PLR + 0.4·PLR²  (centrifugal part-load shape)
+
+  Curve:Biquadratic,
+    ChillerCAPFT,            !- Name
+    1.3488, 0.02, 0.0, -0.02, 0.0, 0.0,
+    5.0, 20.0,               !- CHW leaving temp min/max {C}
+    18.0, 40.0;              !- CW entering temp min/max {C}
+
+  Curve:Biquadratic,
+    ChillerEIRFT,            !- Name
+    0.4768, -0.03, 0.0, 0.03, 0.0, 0.0,
+    5.0, 20.0,               !- CHW leaving temp min/max {C}
+    18.0, 40.0;              !- CW entering temp min/max {C}
+
+  Curve:Quadratic,
+    ChillerEIRFPLR,          !- Name
+    0.1, 0.5, 0.4,
+    0.1, 1.0;                !- PLR min/max
+
+  ! ── CHW Plant Loop ────────────────────────────────────────────
+  !  Supply: Chiller:Electric:EIR (COP 5.5 rated, autosized capacity)
+  !  Demand: ElectricEquipment:ITE:LiquidCooled (CHW → cold plate CDU)
+  !  Setpoint: 12°C at supply outlet
+
+  PlantLoop,
+    CHW Loop,                !- Name
+    Water,                   !- Fluid Type
+    ,                        !- User Defined Fluid
+    CHW Loop Operation,      !- Plant Equipment Operation Scheme Name
+    CHW Loop Supply Outlet Node, !- Loop Temperature Setpoint Node
+    30,                      !- Maximum Loop Temperature {C}
+    5,                       !- Minimum Loop Temperature {C}
+    0.130,                   !- Maximum Loop Volume Flow Rate {m3/s}  (0.097 ITE + 0.010 CRAH + margin)
+    0,                       !- Minimum Loop Volume Flow Rate {m3/s}
+    Autocalculate,           !- Plant Loop Volume {m3}
+    CHW Supply Inlet Node,   !- Plant Side Inlet Node Name
+    CHW Loop Supply Outlet Node, !- Plant Side Outlet Node Name
+    CHW Supply Branches,     !- Plant Side Branch List Name
+    CHW Supply Connectors,   !- Plant Side Connector List Name
+    CHW Demand Inlet Node,   !- Demand Side Inlet Node Name
+    CHW Demand Outlet Node,  !- Demand Side Outlet Node Name
+    CHW Demand Branches,     !- Demand Side Branch List Name
+    CHW Demand Connectors,   !- Demand Side Connector List Name
+    Optimal,                 !- Load Distribution Scheme
+    ,                        !- Availability Manager List Name
+    SingleSetpoint,          !- Plant Loop Demand Calculation Scheme
+    None,                    !- Common Pipe Simulation
+    None;                    !- Pressure Simulation Type
+
+  SetpointManager:Scheduled,
+    CHW Supply Setpoint Manager,
+    Temperature,
+    CHW Supply Temp Setpoint Schedule,
+    CHW Loop Supply Outlet Node;
+
+  Sizing:Plant,
+    CHW Loop, Cooling, 12.0, 5.0;
+
+  ! Supply side: pump + chiller
+
+  BranchList,
+    CHW Supply Branches,
+    CHW Supply Inlet Branch,
+    CHW Chiller Branch,
+    CHW Supply Outlet Branch;
+
+  ConnectorList,
+    CHW Supply Connectors,
+    Connector:Splitter, CHW Supply Splitter,
+    Connector:Mixer,   CHW Supply Mixer;
+
+  Connector:Splitter,
+    CHW Supply Splitter,
+    CHW Supply Inlet Branch,
+    CHW Chiller Branch;
+
+  Connector:Mixer,
+    CHW Supply Mixer,
+    CHW Supply Outlet Branch,
+    CHW Chiller Branch;
+
+  Branch,
+    CHW Supply Inlet Branch, ,
+    Pump:ConstantSpeed, CHW Pump,
+    CHW Supply Inlet Node, CHW Pump Outlet Node;
+
+  Branch,
+    CHW Chiller Branch, ,
+    Chiller:Electric:EIR, CHW Chiller,
+    CHW Chiller CHW Inlet Node, CHW Chiller CHW Outlet Node;
+
+  Branch,
+    CHW Supply Outlet Branch, ,
+    Pipe:Adiabatic, CHW Supply Outlet Pipe,
+    CHW Supply Outlet Pipe Inlet, CHW Loop Supply Outlet Node;
+
+  Pump:ConstantSpeed,
+    CHW Pump,
+    CHW Supply Inlet Node,   !- Inlet
+    CHW Pump Outlet Node,    !- Outlet
+    0.130,                   !- Rated Flow Rate {m3/s}  (bumped from 0.110 for CRAH coil)
+    150000,                  !- Rated Pump Head {Pa}
+    Autosize,                !- Rated Power {W}
+    0.87,                    !- Motor Efficiency
+    0.0,                     !- Fraction Motor Inefficiencies to Fluid
+    Intermittent,            !- Pump Control Type
+    ;                        !- Pump Flow Rate Schedule
+
+  Chiller:Electric:EIR,
+    CHW Chiller,             !- Name
+    2500000,                 !- Reference Capacity {W}  (2.5 MW; ~23% margin over 2.036 MW ITE peak)
+    5.5,                     !- Reference COP {W/W}
+    12.0,                    !- Reference Leaving CHW Temperature {C}
+    29.44,                   !- Reference Entering CW Temperature {C}
+    Autosize,                !- Reference CHW Flow Rate {m3/s}
+    Autosize,                !- Reference CW Flow Rate {m3/s}
+    ChillerCAPFT,            !- Cooling Capacity Function of Temperature Curve
+    ChillerEIRFT,            !- EIR Function of Temperature Curve
+    ChillerEIRFPLR,          !- EIR Function of PLR Curve
+    0.1,                     !- Minimum Part Load Ratio
+    1.0,                     !- Maximum Part Load Ratio
+    1.0,                     !- Optimum Part Load Ratio
+    0.2,                     !- Minimum Unloading Ratio
+    CHW Chiller CHW Inlet Node,   !- CHW Inlet Node Name
+    CHW Chiller CHW Outlet Node,  !- CHW Outlet Node Name
+    CHW Chiller CW Inlet Node,    !- CW Inlet Node Name
+    CHW Chiller CW Outlet Node,   !- CW Outlet Node Name
+    WaterCooled,             !- Condenser Type
+    0.0,                     !- Condenser Fan Power Ratio
+    1.0,                     !- Fraction of Compressor Electric Consumed Rejected by Condenser
+    2.0,                     !- Leaving CHW Lower Temperature Limit {C}
+    NotModulated;            !- Chiller Flow Mode
+
+  Pipe:Adiabatic,
+    CHW Supply Outlet Pipe,
+    CHW Supply Outlet Pipe Inlet,
+    CHW Loop Supply Outlet Node;
+
+  ! Demand side: ITE:LiquidCooled + CRAH cooling coil + bypass
+
+  BranchList,
+    CHW Demand Branches,
+    CHW Demand Inlet Branch,
+    CHW ITE Branch,
+    CHW CRAH Coil Branch,
+    CHW Demand Bypass Branch,
+    CHW Demand Outlet Branch;
+
+  ConnectorList,
+    CHW Demand Connectors,
+    Connector:Splitter, CHW Demand Splitter,
+    Connector:Mixer,   CHW Demand Mixer;
+
+  Connector:Splitter,
+    CHW Demand Splitter,
+    CHW Demand Inlet Branch,
+    CHW ITE Branch,
+    CHW CRAH Coil Branch,
+    CHW Demand Bypass Branch;
+
+  Connector:Mixer,
+    CHW Demand Mixer,
+    CHW Demand Outlet Branch,
+    CHW ITE Branch,
+    CHW CRAH Coil Branch,
+    CHW Demand Bypass Branch;
+
+  Branch,
+    CHW Demand Inlet Branch, ,
+    Pipe:Adiabatic, CHW Demand Inlet Pipe,
+    CHW Demand Inlet Node, CHW Demand Inlet Pipe Outlet;
+
+  Branch,
+    CHW ITE Branch, ,
+    ElectricEquipment:ITE:LiquidCooled,
+    LargeDataCenterHighITE StandaloneDataCenter ITE LiquidCooled 1,
+    ITE FWS Inlet Node, ITE FWS Outlet Node;
+
+  Branch,
+    CHW CRAH Coil Branch, ,
+    Coil:Cooling:Water, DC CRAH Cooling Coil,
+    DC CRAH Coil Water Inlet Node, DC CRAH Coil Water Outlet Node;
+
+  Branch,
+    CHW Demand Bypass Branch, ,
+    Pipe:Adiabatic, CHW Demand Bypass Pipe,
+    CHW Demand Bypass Inlet Node, CHW Demand Bypass Outlet Node;
+
+  Branch,
+    CHW Demand Outlet Branch, ,
+    Pipe:Adiabatic, CHW Demand Outlet Pipe,
+    CHW Demand Outlet Pipe Inlet, CHW Demand Outlet Node;
+
+  Pipe:Adiabatic, CHW Demand Inlet Pipe,
+    CHW Demand Inlet Node, CHW Demand Inlet Pipe Outlet;
+  Pipe:Adiabatic, CHW Demand Bypass Pipe,
+    CHW Demand Bypass Inlet Node, CHW Demand Bypass Outlet Node;
+  Pipe:Adiabatic, CHW Demand Outlet Pipe,
+    CHW Demand Outlet Pipe Inlet, CHW Demand Outlet Node;
+
+  PlantEquipmentOperationSchemes,
+    CHW Loop Operation,
+    PlantEquipmentOperation:CoolingLoad,
+    CHW Cooling Op,
+    Always On Discrete;
+
+  PlantEquipmentOperation:CoolingLoad,
+    CHW Cooling Op,
+    0, 99999999,
+    CHW Cooling Equipment List;
+
+  PlantEquipmentList,
+    CHW Cooling Equipment List,
+    Chiller:Electric:EIR, CHW Chiller;
+
+  ! ── Condenser Water (CW) Loop ─────────────────────────────────
+  !  Supply: CoolingTower:SingleSpeed (wet, evaporative — WUE > 0)
+  !  Demand: Chiller condenser
+  !  Setpoint: 29°C at supply outlet
+
+  PlantLoop,
+    CW Loop,                 !- Name
+    Water,                   !- Fluid Type
+    ,                        !- User Defined Fluid
+    CW Loop Operation,       !- Plant Equipment Operation Scheme Name
+    CW Loop Supply Outlet Node, !- Loop Temperature Setpoint Node
+    45,                      !- Maximum Loop Temperature {C}
+    15,                      !- Minimum Loop Temperature {C}
+    0.250,                   !- Maximum Loop Volume Flow Rate {m3/s}
+    0,                       !- Minimum Loop Volume Flow Rate {m3/s}
+    Autocalculate,           !- Plant Loop Volume {m3}
+    CW Supply Inlet Node,    !- Plant Side Inlet Node Name
+    CW Loop Supply Outlet Node, !- Plant Side Outlet Node Name
+    CW Supply Branches,      !- Plant Side Branch List Name
+    CW Supply Connectors,    !- Plant Side Connector List Name
+    CW Demand Inlet Node,    !- Demand Side Inlet Node Name
+    CW Demand Outlet Node,   !- Demand Side Outlet Node Name
+    CW Demand Branches,      !- Demand Side Branch List Name
+    CW Demand Connectors,    !- Demand Side Connector List Name
+    Optimal,                 !- Load Distribution Scheme
+    ,                        !- Availability Manager List Name
+    SingleSetpoint,          !- Plant Loop Demand Calculation Scheme
+    None,                    !- Common Pipe Simulation
+    None;                    !- Pressure Simulation Type
+
+  SetpointManager:FollowOutdoorAirTemperature,
+    CW Supply Setpoint Manager,  !- Name
+    Temperature,                 !- Control Variable
+    OutdoorAirWetBulb,           !- Reference Temperature Type
+    3.0,                         !- Offset Temperature Difference {deltaC}  (tower approach)
+    29.0,                        !- Maximum Setpoint Temperature {C}  (design max)
+    18.0,                        !- Minimum Setpoint Temperature {C}  (chiller protection floor)
+    CW Loop Supply Outlet Node;  !- Setpoint Node Name
+
+  Sizing:Plant,
+    CW Loop, Condenser, 29.0, 6.0;
+
+  ! Supply side: pump + cooling tower
+
+  BranchList,
+    CW Supply Branches,
+    CW Supply Inlet Branch,
+    CW Tower Branch,
+    CW Supply Outlet Branch;
+
+  ConnectorList,
+    CW Supply Connectors,
+    Connector:Splitter, CW Supply Splitter,
+    Connector:Mixer,   CW Supply Mixer;
+
+  Connector:Splitter,
+    CW Supply Splitter,
+    CW Supply Inlet Branch,
+    CW Tower Branch;
+
+  Connector:Mixer,
+    CW Supply Mixer,
+    CW Supply Outlet Branch,
+    CW Tower Branch;
+
+  Branch,
+    CW Supply Inlet Branch, ,
+    Pump:ConstantSpeed, CW Pump,
+    CW Supply Inlet Node, CW Pump Outlet Node;
+
+  Branch,
+    CW Tower Branch, ,
+    CoolingTower:SingleSpeed, CW Cooling Tower,
+    CW Tower Inlet Node, CW Tower Outlet Node;
+
+  Branch,
+    CW Supply Outlet Branch, ,
+    Pipe:Adiabatic, CW Supply Outlet Pipe,
+    CW Supply Outlet Pipe Inlet, CW Loop Supply Outlet Node;
+
+  Pump:ConstantSpeed,
+    CW Pump,
+    CW Supply Inlet Node,    !- Inlet
+    CW Pump Outlet Node,     !- Outlet
+    0.250,                   !- Rated Flow Rate {m3/s}
+    150000,                  !- Rated Pump Head {Pa}
+    Autosize,                !- Rated Power {W}
+    0.87,                    !- Motor Efficiency
+    0.0,                     !- Fraction Motor Inefficiencies to Fluid
+    Intermittent,            !- Pump Control Type
+    ;                        !- Pump Flow Rate Schedule
+
+  ! Wet cooling tower: NominalCapacity method
+  !   Nominal capacity defined at: 35°C entering water, 29.44°C leaving water,
+  !   25.56°C WB, 35°C DB (per EnergyPlus documentation).
+  !   Sized for ~3.5 MW condenser duty (chiller + pump heat).
+  !   Evaporation loss tracked → contributes to WUE.
+  CoolingTower:SingleSpeed,
+    CW Cooling Tower,        !- Name
+    CW Tower Inlet Node,     !- Water Inlet Node Name
+    CW Tower Outlet Node,    !- Water Outlet Node Name
+    ,                        !- Design Water Flow Rate {m3/s}  (blank = NominalCapacity)
+    Autosize,                !- Design Air Flow Rate {m3/s}
+    Autosize,                !- Design Fan Power {W}
+    ,                        !- Design U-Factor Times Area Value {W/K}  (blank = NominalCapacity)
+    0.0,                     !- Free Convection Regime Air Flow Rate {m3/s}
+    0.1,                     !- Free Convection Air Flow Rate Sizing Factor
+    0.0,                     !- Free Convection U-Factor Times Area Value {W/K}
+    0.1,                     !- Free Convection U-Factor Times Area Sizing Factor
+    NominalCapacity,         !- Performance Input Method
+    1.25,                    !- Heat Rejection Capacity and Nominal Capacity Sizing Ratio
+    3500000,                 !- Nominal Capacity {W}
+    0.0,                     !- Free Convection Capacity {W}  (0 = no free convection)
+    0.1,                     !- Free Convection Nominal Capacity Sizing Factor
+    35.0,                    !- Design Inlet Air Dry-Bulb Temperature {C}
+    25.6,                    !- Design Inlet Air Wet-Bulb Temperature {C}
+    Autosize,                !- Design Approach Temperature {deltaC}
+    Autosize,                !- Design Range Temperature {deltaC}
+    0.0,                     !- Basin Heater Capacity {W/K}
+    2.0,                     !- Basin Heater Setpoint Temperature {C}
+    ,                        !- Basin Heater Operating Schedule Name
+    SaturatedExit,           !- Evaporation Loss Mode
+    0.2,                     !- Evaporation Loss Factor {percent/K}
+    0.008,                   !- Drift Loss Percent
+    ConcentrationRatio,      !- Blowdown Calculation Mode
+    3.0,                     !- Blowdown Concentration Ratio
+    ,                        !- Blowdown Makeup Water Usage Schedule Name
+    ,                        !- Supply Water Storage Tank Name
+    ,                        !- Outdoor Air Inlet Node Name
+    FanCycling;              !- Capacity Control
+
+  Pipe:Adiabatic,
+    CW Supply Outlet Pipe,
+    CW Supply Outlet Pipe Inlet,
+    CW Loop Supply Outlet Node;
+
+  ! Demand side: chiller condenser
+
+  BranchList,
+    CW Demand Branches,
+    CW Demand Inlet Branch,
+    CW Chiller Cond Branch,
+    CW Demand Outlet Branch;
+
+  ConnectorList,
+    CW Demand Connectors,
+    Connector:Splitter, CW Demand Splitter,
+    Connector:Mixer,   CW Demand Mixer;
+
+  Connector:Splitter,
+    CW Demand Splitter,
+    CW Demand Inlet Branch,
+    CW Chiller Cond Branch;
+
+  Connector:Mixer,
+    CW Demand Mixer,
+    CW Demand Outlet Branch,
+    CW Chiller Cond Branch;
+
+  Branch,
+    CW Demand Inlet Branch, ,
+    Pipe:Adiabatic, CW Demand Inlet Pipe,
+    CW Demand Inlet Node, CW Demand Inlet Pipe Outlet;
+
+  Branch,
+    CW Chiller Cond Branch, ,
+    Chiller:Electric:EIR, CHW Chiller,
+    CHW Chiller CW Inlet Node, CHW Chiller CW Outlet Node;
+
+  Branch,
+    CW Demand Outlet Branch, ,
+    Pipe:Adiabatic, CW Demand Outlet Pipe,
+    CW Demand Outlet Pipe Inlet, CW Demand Outlet Node;
+
+  Pipe:Adiabatic, CW Demand Inlet Pipe,
+    CW Demand Inlet Node, CW Demand Inlet Pipe Outlet;
+  Pipe:Adiabatic, CW Demand Outlet Pipe,
+    CW Demand Outlet Pipe Inlet, CW Demand Outlet Node;
+
+  PlantEquipmentOperationSchemes,
+    CW Loop Operation,
+    PlantEquipmentOperation:CoolingLoad,
+    CW Cooling Op,
+    Always On Discrete;
+
+  PlantEquipmentOperation:CoolingLoad,
+    CW Cooling Op,
+    0, 99999999,
+    CW Cooling Equipment List;
+
+  PlantEquipmentList,
+    CW Cooling Equipment List,
+    CoolingTower:SingleSpeed, CW Cooling Tower;
+
+  ! ── Outputs ──────────────────────────────────────────────────
+
+  OutputControl:Table:Style, HTML;
+  Output:VariableDictionary, IDF, Unsorted;
+  Output:SQLite, SimpleAndTabular;
+  Output:Table:SummaryReports, AllSummary;
+
+  Output:Variable,
+    LargeDataCenterHighITE StandaloneDataCenter ITE LiquidCooled 1,
+    ITE Liquid Cooled CPU Electricity Rate, Hourly;
+  Output:Variable,
+    LargeDataCenterHighITE StandaloneDataCenter ITE LiquidCooled 1,
+    ITE Liquid Cooled Heat Extraction Rate, Hourly;
+  Output:Variable,
+    LargeDataCenterHighITE StandaloneDataCenter ITE LiquidCooled 1,
+    ITE Liquid Cooled Zone Sensible Heat Gain Rate, Hourly;
+  Output:Variable,
+    LargeDataCenterHighITE StandaloneDataCenter ITE LiquidCooled 1,
+    ITE Liquid Cooled Facility Water Supply Temperature, Hourly;
+  Output:Variable,
+    LargeDataCenterHighITE StandaloneDataCenter ITE LiquidCooled 1,
+    ITE Liquid Cooled Facility Water Return Temperature, Hourly;
+  Output:Variable,
+    LargeDataCenterHighITE StandaloneDataCenter ITE LiquidCooled 1,
+    ITE Liquid Cooled Rack Coolant Supply Temperature, Hourly;
+  Output:Variable,
+    LargeDataCenterHighITE StandaloneDataCenter ITE LiquidCooled 1,
+    ITE Liquid Cooled Rack Coolant Return Temperature, Hourly;
+  Output:Variable,
+    LargeDataCenterHighITE StandaloneDataCenter ITE LiquidCooled 1,
+    ITE Liquid Cooled CDU Approach Temperature, Hourly;
+  Output:Variable,
+    LargeDataCenterHighITE StandaloneDataCenter ITE LiquidCooled 1,
+    ITE Liquid Cooled Peak Chip Junction Temperature, Hourly;
+
+  Output:Variable,
+    LargeDataCenterHighITE StandaloneDataCenter ITE LiquidCooled 1,
+    ITE Liquid Cooled Facility Water Mass Flow Rate, Hourly;
+
+  Output:Variable, *, Chiller Electricity Rate, Hourly;
+  Output:Variable, *, Chiller COP, Hourly;
+  Output:Variable, *, Cooling Tower Fan Electricity Rate, Hourly;
+  Output:Variable, *, Cooling Tower Water Evaporation Volume, Hourly;
+  Output:Variable, *, Pump Electricity Rate, Hourly;
+  Output:Variable, *, Zone Mean Air Temperature, Hourly;
+
+  ! CRAH (zone residual cooling) variables
+  Output:Variable, *, Fan Electricity Rate, Hourly;
+  Output:Variable, *, Fan Air Mass Flow Rate, Hourly;
+  Output:Variable, *, Cooling Coil Total Cooling Rate, Hourly;
+  Output:Variable, *, Cooling Coil Sensible Cooling Rate, Hourly;
+  Output:Variable, *, Fan Coil Total Cooling Rate, Hourly;
+  Output:Variable, *, System Node Temperature, Hourly;
+
+  Output:Meter, Electricity:Facility, Annual;
+  Output:Meter, Cooling:Electricity, Annual;
+  Output:Meter, Fans:Electricity, Annual;
+  Output:Meter, WaterSystems:Cooling, Annual;
+  Output:Meter, DistrictCooling:Facility, Annual;   ! Should be ~0 — CRAH now handles residual
+  Output:Meter, DistrictHeating:Facility, Annual;   ! Should be ~0
+
+  ! ============================================================
+  ! Added 2026-08-31: hourly meters for PUE / WUE / EUE time series
+  ! ============================================================
+  Output:Meter, Electricity:Facility, Hourly;
+  Output:Meter, InteriorEquipment:Electricity, Hourly;
+  Output:Meter, ITE-CPU:InteriorEquipment:Electricity, Hourly;
+  Output:Meter, ITE-Fans:InteriorEquipment:Electricity, Hourly;
+  Output:Meter, ITE-UPS:InteriorEquipment:Electricity, Hourly;
+  Output:Meter, Cooling:Electricity, Hourly;
+  Output:Meter, Fans:Electricity, Hourly;
+  Output:Meter, Pumps:Electricity, Hourly;
+  Output:Meter, HeatRejection:Electricity, Hourly;
+  Output:Meter, InteriorLights:Electricity, Hourly;
+  Output:Meter, Humidifier:Electricity, Hourly;
+  Output:Meter, MainsWater:Facility, Hourly;
+  Output:Meter, Water:Facility, Hourly;
+  Output:Variable, Environment, Site Outdoor Air Drybulb Temperature, Hourly;
+  Output:Variable, Environment, Site Outdoor Air Wetbulb Temperature, Hourly;
+

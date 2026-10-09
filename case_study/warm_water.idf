@@ -1,0 +1,1666 @@
+! ============================================================
+!  test_warm_water_two_loop_v2_crah_updated_June08.idf
+!
+!  June08 revision of the June02 file.  ONLY change: the Room CHW air-cooled
+!  chiller (and its loop/pump/coil water flows) is re-sized for the intended
+!  20% air-side leakage.  600 kW → 1000 kW nameplate so the CRAH can actually
+!  hold the data hall at setpoint (the June02 600 kW unit saturated at hot OA
+!  and the zone ran away to 47°C mean / 176°C peak).  See "Room Chiller" block.
+!  ITE object (20% leakage) and the warm-water FWS/dry-cooler loop are unchanged.
+!
+!    xPU junction  :  80–90°C
+!    Secondary loop:  70–80°C*  (liquid/vapor, rack side)
+!    Primary loop  :  45°C supply → ~47°C return  (facility)
+!    Rejection     :  FluidCooler:SingleSpeed (Dry Cooler)
+!                     Ambient −10°C to 40°C
+!
+!  C++ object: ElectricEquipment:ITE:LiquidCooled  (ITE_LiquidCooled.cc/.hh)
+!  HVAC:  ZoneHVAC:IdealLoadsAirSystem  (handles 5% air-side leakage)
+!  Plant: FluidCooler:SingleSpeed → PlantLoop → ITE:LiquidCooled
+! ============================================================
+
+  Version,26.1;
+
+  Timestep,6;
+
+  SimulationControl,
+    No,    !- Do Zone Sizing Calculation
+    No,    !- Do System Sizing Calculation
+    No,    !- Do Plant Sizing Calculation
+    No,    !- Run Simulation for Sizing Periods
+    Yes,   !- Run Simulation for Weather File Run Periods
+    No,    !- Do HVAC Sizing Simulation for Sizing Periods
+    1;     !- Maximum Number of HVAC Sizing Simulation Passes
+
+  SizingPeriod:DesignDay,
+    Tampa Summer DesignDay,  !- Name
+    8,                       !- Month
+    21,                      !- Day of Month
+    SummerDesignDay,         !- Day Type
+    33.9,                    !- Maximum Dry-Bulb Temperature {C}
+    7.9,                     !- Daily Dry-Bulb Temperature Range {deltaC}
+    DefaultMultipliers,      !- Dry-Bulb Temperature Range Modifier Type
+    ,                        !- Dry-Bulb Temperature Range Modifier Day Schedule Name
+    Wetbulb,                 !- Humidity Condition Type
+    25.1,                    !- Wetbulb or DewPoint at Maximum Dry-Bulb {C}
+    ,                        !- Humidity Condition Day Schedule Name
+    ,                        !- Humidity Ratio at Maximum Dry-Bulb {kgWater/kgDryAir}
+    ,                        !- Enthalpy at Maximum Dry-Bulb {J/kg}
+    ,                        !- Daily Wet-Bulb Temperature Range {deltaC}
+    101229,                  !- Barometric Pressure {Pa}
+    3.1,                     !- Wind Speed {m/s}
+    270,                     !- Wind Direction {deg}
+    No,                      !- Rain Indicator
+    No,                      !- Snow Indicator
+    No,                      !- Daylight Saving Time Indicator
+    ASHRAETau,               !- Solar Model Indicator
+    ,                        !- Beam Solar Day Schedule Name
+    ,                        !- Diffuse Solar Day Schedule Name
+    0.491,                   !- ASHRAE Clear Sky Optical Depth for Beam Irradiance (taub) {dimensionless}
+    2.016,                   !- ASHRAE Clear Sky Optical Depth for Diffuse Irradiance (taud) {dimensionless}
+    ,                        !- Sky Clearness
+    ,                        !- Maximum Number Warmup Days
+    FullResetAtBeginEnvironment;  !- Begin Environment Reset Mode
+
+  RunPeriod,
+    Run Period 1,            !- Name
+    1,                       !- Begin Month
+    1,                       !- Begin Day of Month
+    2026,                    !- Begin Year
+    12,                      !- End Month
+    31,                      !- End Day of Month
+    2026,                    !- End Year
+    Thursday,                !- Day of Week for Start Day
+    No,                      !- Use Weather File Holidays and Special Days
+    No,                      !- Use Weather File Daylight Saving Period
+    No,                      !- Apply Weekend Holiday Rule
+    Yes,                     !- Use Weather File Rain Indicators
+    Yes;                     !- Use Weather File Snow Indicators
+
+  HeatBalanceAlgorithm, ConductionTransferFunction, 200;
+  SurfaceConvectionAlgorithm:Inside,  TARP;
+  SurfaceConvectionAlgorithm:Outside, TARP;
+  ShadowCalculation, PolygonClipping, Periodic, 20, 15000;
+
+  Site:Location,
+    Tampa-MacDill AFB_FL_USA,
+    27.85, -82.52, -5, 8;
+
+  Site:GroundTemperature:FCfactorMethod,
+    24.2,18.9,15.7,13.6,15.5,17.1,21.2,26.9,27.6,27.9,27.4,26.2;
+
+  GlobalGeometryRules,
+    UpperLeftCorner, Counterclockwise, Relative, Relative, Relative;
+
+  ! ── Schedules ─────────────────────────────────────────────
+
+  ScheduleTypeLimits, Fractional, 0, 1, Continuous;
+  ScheduleTypeLimits, Temperature,  ,  , Continuous, temperature;
+  ScheduleTypeLimits, AnyNumber;
+
+  Schedule:Constant, Always On Discrete,  AnyNumber, 1;
+  Schedule:Constant, Always Off Discrete, AnyNumber, 0;
+
+  ! Server power: always at 100 % (1.0)
+  Schedule:Constant, ITE Power Schedule,  Fractional, 1.0;
+
+  ! CPU load: ramps from 30% at midnight to 90% at noon, back to 30%
+  Schedule:Compact,
+    ITE CPU Load Schedule,
+    Fractional,
+    Through: 12/31,
+    For: AllDays,
+    Until: 06:00, 0.30,
+    Until: 12:00, 0.90,
+    Until: 18:00, 0.90,
+    Until: 24:00, 0.30;
+
+  ! Zone thermostat
+  Schedule:Compact,
+    DC Thermostat Schedule,
+    AnyNumber,
+    Through: 12/31, For: AllDays, Until: 24:00, 4;
+
+  ScheduleTypeLimits, TstatLimits, 0, 4, DISCRETE;
+
+  Schedule:Compact,
+    DC HTGSETP, Temperature,
+    Through: 12/31, For: AllDays, Until: 24:00, 15;
+
+  Schedule:Compact,
+    DC CLGSETP, Temperature,
+    Through: 12/31, For: AllDays, Until: 24:00, 35;
+
+  ! Warm-water FWS supply setpoint: 45°C
+  Schedule:Compact,
+    WW FWS Supply Temp Setpoint,
+    Temperature,
+    Through: 12/31, For: AllDays, Until: 24:00, 45.0;
+
+  Schedule:Day:Interval,
+    DataCenter Equipment_SCH Default,  !- Name
+    Fractional,              !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    1;                       !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    DataCenter Equipment_SCH Summer Design Day,  !- Name
+    Fractional,              !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    1;                       !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    DataCenter Equipment_SCH Winter Design Day,  !- Name
+    Fractional,              !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    1;                       !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    DataCenter Equipment_SCH Wknd|Wkdy Day,  !- Name
+    Fractional,              !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    0.25;                    !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 1,  !- Name
+    Fractional,              !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    0.5;                     !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 10,  !- Name
+    Fractional,              !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    0.75;                    !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 11,  !- Name
+    Fractional,              !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    1;                       !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 2,  !- Name
+    Fractional,              !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    0.75;                    !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 3,  !- Name
+    Fractional,              !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    1;                       !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 4,  !- Name
+    Fractional,              !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    0.25;                    !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 5,  !- Name
+    Fractional,              !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    0.5;                     !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 6,  !- Name
+    Fractional,              !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    0.75;                    !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 7,  !- Name
+    Fractional,              !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    1;                       !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 8,  !- Name
+    Fractional,              !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    0.25;                    !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    DataCenter Equipment_SCH Wknd|Wkdy Day 9,  !- Name
+    Fractional,              !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    0.5;                     !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    DataCenter HVACOperationSchd Default,  !- Name
+    OnOff,                   !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    1;                       !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    DataCenter HVACOperationSchd Summer Design Day,  !- Name
+    OnOff,                   !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    1;                       !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    DataCenter HVACOperationSchd Winter Design Day,  !- Name
+    OnOff,                   !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    1;                       !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    DataCenter MinOA_MotorizedDamper_Sched Default,  !- Name
+    Fractional,              !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    1;                       !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    Economizer Max OA Fraction 70 pct Default,  !- Name
+    ,                        !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    0.7;                     !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    LargeDataCenterHighITE ReturnApproachTemp_SCH Default,  !- Name
+    Temperature 2,           !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    -7.55;                   !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    LargeDataCenterHighITE ReturnApproachTemp_SCH Summer Design Day,  !- Name
+    Temperature 2,           !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    -7.55;                   !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    LargeDataCenterHighITE ReturnApproachTemp_SCH Winter Design Day,  !- Name
+    Temperature 2,           !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    -7.55;                   !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    LargeDataCenterHighITE ReturnApproachTemp_SCH Wknd|Wkdy Day,  !- Name
+    Temperature 2,           !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    -7.09;                   !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    LargeDataCenterHighITE ReturnApproachTemp_SCH Wknd|Wkdy Day 1,  !- Name
+    Temperature 2,           !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    -7.24;                   !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    LargeDataCenterHighITE ReturnApproachTemp_SCH Wknd|Wkdy Day 10,  !- Name
+    Temperature 2,           !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    -7.4;                    !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    LargeDataCenterHighITE ReturnApproachTemp_SCH Wknd|Wkdy Day 11,  !- Name
+    Temperature 2,           !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    -7.55;                   !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    LargeDataCenterHighITE ReturnApproachTemp_SCH Wknd|Wkdy Day 2,  !- Name
+    Temperature 2,           !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    -7.4;                    !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    LargeDataCenterHighITE ReturnApproachTemp_SCH Wknd|Wkdy Day 3,  !- Name
+    Temperature 2,           !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    -7.55;                   !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    LargeDataCenterHighITE ReturnApproachTemp_SCH Wknd|Wkdy Day 4,  !- Name
+    Temperature 2,           !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    -7.09;                   !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    LargeDataCenterHighITE ReturnApproachTemp_SCH Wknd|Wkdy Day 5,  !- Name
+    Temperature 2,           !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    -7.24;                   !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    LargeDataCenterHighITE ReturnApproachTemp_SCH Wknd|Wkdy Day 6,  !- Name
+    Temperature 2,           !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    -7.4;                    !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    LargeDataCenterHighITE ReturnApproachTemp_SCH Wknd|Wkdy Day 7,  !- Name
+    Temperature 2,           !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    -7.55;                   !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    LargeDataCenterHighITE ReturnApproachTemp_SCH Wknd|Wkdy Day 8,  !- Name
+    Temperature 2,           !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    -7.09;                   !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    LargeDataCenterHighITE ReturnApproachTemp_SCH Wknd|Wkdy Day 9,  !- Name
+    Temperature 2,           !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    -7.24;                   !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    LargeDataCenterHighITE SupplyApproachTemp_SCH Default,  !- Name
+    Temperature 1,           !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    9.43;                    !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    LargeDataCenterHighITE SupplyApproachTemp_SCH Summer Design Day,  !- Name
+    Temperature 1,           !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    9.43;                    !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    LargeDataCenterHighITE SupplyApproachTemp_SCH Winter Design Day,  !- Name
+    Temperature 1,           !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    9.43;                    !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    LargeDataCenterHighITE SupplyApproachTemp_SCH Wknd|Wkdy Day,  !- Name
+    Temperature 1,           !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    10.61;                   !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    LargeDataCenterHighITE SupplyApproachTemp_SCH Wknd|Wkdy Day 1,  !- Name
+    Temperature 1,           !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    10.21;                   !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    LargeDataCenterHighITE SupplyApproachTemp_SCH Wknd|Wkdy Day 10,  !- Name
+    Temperature 1,           !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    9.82;                    !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    LargeDataCenterHighITE SupplyApproachTemp_SCH Wknd|Wkdy Day 11,  !- Name
+    Temperature 1,           !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    9.43;                    !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    LargeDataCenterHighITE SupplyApproachTemp_SCH Wknd|Wkdy Day 2,  !- Name
+    Temperature 1,           !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    9.82;                    !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    LargeDataCenterHighITE SupplyApproachTemp_SCH Wknd|Wkdy Day 3,  !- Name
+    Temperature 1,           !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    9.43;                    !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    LargeDataCenterHighITE SupplyApproachTemp_SCH Wknd|Wkdy Day 4,  !- Name
+    Temperature 1,           !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    10.61;                   !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    LargeDataCenterHighITE SupplyApproachTemp_SCH Wknd|Wkdy Day 5,  !- Name
+    Temperature 1,           !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    10.21;                   !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    LargeDataCenterHighITE SupplyApproachTemp_SCH Wknd|Wkdy Day 6,  !- Name
+    Temperature 1,           !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    9.82;                    !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    LargeDataCenterHighITE SupplyApproachTemp_SCH Wknd|Wkdy Day 7,  !- Name
+    Temperature 1,           !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    9.43;                    !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    LargeDataCenterHighITE SupplyApproachTemp_SCH Wknd|Wkdy Day 8,  !- Name
+    Temperature 1,           !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    10.61;                   !- Value Until Time 1
+
+  Schedule:Day:Interval,
+    LargeDataCenterHighITE SupplyApproachTemp_SCH Wknd|Wkdy Day 9,  !- Name
+    Temperature 1,           !- Schedule Type Limits Name
+    No,                      !- Interpolate to Timestep
+    24:00,                   !- Time 1
+    10.21;                   !- Value Until Time 1
+
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Jan1-Jan28,  !- Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day,  !- Sunday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day,  !- Monday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day,  !- Tuesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day,  !- Wednesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day,  !- Thursday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day,  !- Friday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day,  !- Saturday Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- Holiday Schedule:Day Name
+    DataCenter Equipment_SCH Summer Design Day,  !- SummerDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Winter Design Day,  !- WinterDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- CustomDay1 Schedule:Day Name
+    DataCenter Equipment_SCH Default;  !- CustomDay2 Schedule:Day Name
+
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Jan29-Feb4,  !- Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day,  !- Sunday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day,  !- Monday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day,  !- Tuesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 1,  !- Wednesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 1,  !- Thursday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 1,  !- Friday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 1,  !- Saturday Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- Holiday Schedule:Day Name
+    DataCenter Equipment_SCH Summer Design Day,  !- SummerDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Winter Design Day,  !- WinterDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- CustomDay1 Schedule:Day Name
+    DataCenter Equipment_SCH Default;  !- CustomDay2 Schedule:Day Name
+
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Feb5-Feb25,  !- Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 1,  !- Sunday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 1,  !- Monday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 1,  !- Tuesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 1,  !- Wednesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 1,  !- Thursday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 1,  !- Friday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 1,  !- Saturday Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- Holiday Schedule:Day Name
+    DataCenter Equipment_SCH Summer Design Day,  !- SummerDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Winter Design Day,  !- WinterDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- CustomDay1 Schedule:Day Name
+    DataCenter Equipment_SCH Default;  !- CustomDay2 Schedule:Day Name
+
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Feb26-Mar4,  !- Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 1,  !- Sunday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 1,  !- Monday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 1,  !- Tuesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 2,  !- Wednesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 2,  !- Thursday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 2,  !- Friday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 2,  !- Saturday Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- Holiday Schedule:Day Name
+    DataCenter Equipment_SCH Summer Design Day,  !- SummerDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Winter Design Day,  !- WinterDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- CustomDay1 Schedule:Day Name
+    DataCenter Equipment_SCH Default;  !- CustomDay2 Schedule:Day Name
+
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Mar5-Mar25,  !- Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 2,  !- Sunday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 2,  !- Monday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 2,  !- Tuesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 2,  !- Wednesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 2,  !- Thursday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 2,  !- Friday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 2,  !- Saturday Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- Holiday Schedule:Day Name
+    DataCenter Equipment_SCH Summer Design Day,  !- SummerDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Winter Design Day,  !- WinterDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- CustomDay1 Schedule:Day Name
+    DataCenter Equipment_SCH Default;  !- CustomDay2 Schedule:Day Name
+
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Mar26-Apr1,  !- Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 2,  !- Sunday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 2,  !- Monday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 2,  !- Tuesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 2,  !- Wednesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 2,  !- Thursday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 2,  !- Friday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 3,  !- Saturday Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- Holiday Schedule:Day Name
+    DataCenter Equipment_SCH Summer Design Day,  !- SummerDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Winter Design Day,  !- WinterDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- CustomDay1 Schedule:Day Name
+    DataCenter Equipment_SCH Default;  !- CustomDay2 Schedule:Day Name
+
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Apr2-Apr29,  !- Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 3,  !- Sunday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 3,  !- Monday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 3,  !- Tuesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 3,  !- Wednesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 3,  !- Thursday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 3,  !- Friday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 3,  !- Saturday Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- Holiday Schedule:Day Name
+    DataCenter Equipment_SCH Summer Design Day,  !- SummerDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Winter Design Day,  !- WinterDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- CustomDay1 Schedule:Day Name
+    DataCenter Equipment_SCH Default;  !- CustomDay2 Schedule:Day Name
+
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Apr30-May6,  !- Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 3,  !- Sunday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 4,  !- Monday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 4,  !- Tuesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 4,  !- Wednesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 4,  !- Thursday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 4,  !- Friday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 4,  !- Saturday Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- Holiday Schedule:Day Name
+    DataCenter Equipment_SCH Summer Design Day,  !- SummerDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Winter Design Day,  !- WinterDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- CustomDay1 Schedule:Day Name
+    DataCenter Equipment_SCH Default;  !- CustomDay2 Schedule:Day Name
+
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - May7-May27,  !- Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 4,  !- Sunday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 4,  !- Monday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 4,  !- Tuesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 4,  !- Wednesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 4,  !- Thursday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 4,  !- Friday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 4,  !- Saturday Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- Holiday Schedule:Day Name
+    DataCenter Equipment_SCH Summer Design Day,  !- SummerDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Winter Design Day,  !- WinterDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- CustomDay1 Schedule:Day Name
+    DataCenter Equipment_SCH Default;  !- CustomDay2 Schedule:Day Name
+
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - May28-Jun3,  !- Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 4,  !- Sunday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 4,  !- Monday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 4,  !- Tuesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 4,  !- Wednesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 5,  !- Thursday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 5,  !- Friday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 5,  !- Saturday Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- Holiday Schedule:Day Name
+    DataCenter Equipment_SCH Summer Design Day,  !- SummerDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Winter Design Day,  !- WinterDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- CustomDay1 Schedule:Day Name
+    DataCenter Equipment_SCH Default;  !- CustomDay2 Schedule:Day Name
+
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Jun4-Jun24,  !- Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 5,  !- Sunday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 5,  !- Monday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 5,  !- Tuesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 5,  !- Wednesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 5,  !- Thursday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 5,  !- Friday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 5,  !- Saturday Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- Holiday Schedule:Day Name
+    DataCenter Equipment_SCH Summer Design Day,  !- SummerDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Winter Design Day,  !- WinterDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- CustomDay1 Schedule:Day Name
+    DataCenter Equipment_SCH Default;  !- CustomDay2 Schedule:Day Name
+
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Jun25-Jul1,  !- Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 5,  !- Sunday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 5,  !- Monday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 5,  !- Tuesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 5,  !- Wednesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 5,  !- Thursday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 5,  !- Friday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 6,  !- Saturday Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- Holiday Schedule:Day Name
+    DataCenter Equipment_SCH Summer Design Day,  !- SummerDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Winter Design Day,  !- WinterDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- CustomDay1 Schedule:Day Name
+    DataCenter Equipment_SCH Default;  !- CustomDay2 Schedule:Day Name
+
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Jul2-Jul29,  !- Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 6,  !- Sunday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 6,  !- Monday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 6,  !- Tuesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 6,  !- Wednesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 6,  !- Thursday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 6,  !- Friday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 6,  !- Saturday Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- Holiday Schedule:Day Name
+    DataCenter Equipment_SCH Summer Design Day,  !- SummerDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Winter Design Day,  !- WinterDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- CustomDay1 Schedule:Day Name
+    DataCenter Equipment_SCH Default;  !- CustomDay2 Schedule:Day Name
+
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Jul30-Aug5,  !- Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 6,  !- Sunday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 6,  !- Monday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 7,  !- Tuesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 7,  !- Wednesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 7,  !- Thursday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 7,  !- Friday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 7,  !- Saturday Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- Holiday Schedule:Day Name
+    DataCenter Equipment_SCH Summer Design Day,  !- SummerDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Winter Design Day,  !- WinterDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- CustomDay1 Schedule:Day Name
+    DataCenter Equipment_SCH Default;  !- CustomDay2 Schedule:Day Name
+
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Aug6-Aug26,  !- Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 7,  !- Sunday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 7,  !- Monday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 7,  !- Tuesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 7,  !- Wednesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 7,  !- Thursday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 7,  !- Friday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 7,  !- Saturday Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- Holiday Schedule:Day Name
+    DataCenter Equipment_SCH Summer Design Day,  !- SummerDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Winter Design Day,  !- WinterDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- CustomDay1 Schedule:Day Name
+    DataCenter Equipment_SCH Default;  !- CustomDay2 Schedule:Day Name
+
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Aug27-Sep2,  !- Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 7,  !- Sunday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 7,  !- Monday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 7,  !- Tuesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 7,  !- Wednesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 7,  !- Thursday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 8,  !- Friday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 8,  !- Saturday Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- Holiday Schedule:Day Name
+    DataCenter Equipment_SCH Summer Design Day,  !- SummerDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Winter Design Day,  !- WinterDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- CustomDay1 Schedule:Day Name
+    DataCenter Equipment_SCH Default;  !- CustomDay2 Schedule:Day Name
+
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Sep3-Sep30,  !- Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 8,  !- Sunday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 8,  !- Monday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 8,  !- Tuesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 8,  !- Wednesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 8,  !- Thursday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 8,  !- Friday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 8,  !- Saturday Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- Holiday Schedule:Day Name
+    DataCenter Equipment_SCH Summer Design Day,  !- SummerDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Winter Design Day,  !- WinterDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- CustomDay1 Schedule:Day Name
+    DataCenter Equipment_SCH Default;  !- CustomDay2 Schedule:Day Name
+
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Oct1-Oct28,  !- Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 9,  !- Sunday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 9,  !- Monday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 9,  !- Tuesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 9,  !- Wednesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 9,  !- Thursday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 9,  !- Friday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 9,  !- Saturday Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- Holiday Schedule:Day Name
+    DataCenter Equipment_SCH Summer Design Day,  !- SummerDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Winter Design Day,  !- WinterDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- CustomDay1 Schedule:Day Name
+    DataCenter Equipment_SCH Default;  !- CustomDay2 Schedule:Day Name
+
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Oct29-Nov4,  !- Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 9,  !- Sunday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 9,  !- Monday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 9,  !- Tuesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 10,  !- Wednesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 10,  !- Thursday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 10,  !- Friday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 10,  !- Saturday Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- Holiday Schedule:Day Name
+    DataCenter Equipment_SCH Summer Design Day,  !- SummerDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Winter Design Day,  !- WinterDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- CustomDay1 Schedule:Day Name
+    DataCenter Equipment_SCH Default;  !- CustomDay2 Schedule:Day Name
+
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Nov5-Nov25,  !- Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 10,  !- Sunday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 10,  !- Monday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 10,  !- Tuesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 10,  !- Wednesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 10,  !- Thursday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 10,  !- Friday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 10,  !- Saturday Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- Holiday Schedule:Day Name
+    DataCenter Equipment_SCH Summer Design Day,  !- SummerDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Winter Design Day,  !- WinterDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- CustomDay1 Schedule:Day Name
+    DataCenter Equipment_SCH Default;  !- CustomDay2 Schedule:Day Name
+
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Nov26-Dec2,  !- Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 10,  !- Sunday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 10,  !- Monday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 10,  !- Tuesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 10,  !- Wednesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 10,  !- Thursday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 11,  !- Friday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 11,  !- Saturday Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- Holiday Schedule:Day Name
+    DataCenter Equipment_SCH Summer Design Day,  !- SummerDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Winter Design Day,  !- WinterDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- CustomDay1 Schedule:Day Name
+    DataCenter Equipment_SCH Default;  !- CustomDay2 Schedule:Day Name
+
+  Schedule:Week:Daily,
+    DataCenter Equipment_SCH Week Rule - Dec3-Dec31,  !- Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 11,  !- Sunday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 11,  !- Monday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 11,  !- Tuesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 11,  !- Wednesday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 11,  !- Thursday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 11,  !- Friday Schedule:Day Name
+    DataCenter Equipment_SCH Wknd|Wkdy Day 11,  !- Saturday Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- Holiday Schedule:Day Name
+    DataCenter Equipment_SCH Summer Design Day,  !- SummerDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Winter Design Day,  !- WinterDesignDay Schedule:Day Name
+    DataCenter Equipment_SCH Default,  !- CustomDay1 Schedule:Day Name
+    DataCenter Equipment_SCH Default;  !- CustomDay2 Schedule:Day Name
+  Schedule:Year,
+    DataCenter Equipment_SCH,!- Name
+    Fractional,              !- Schedule Type Limits Name
+    DataCenter Equipment_SCH Week Rule - Jan1-Jan28,  !- Schedule:Week Name 1
+    1,                       !- Start Month 1
+    1,                       !- Start Day 1
+    1,                       !- End Month 1
+    28,                      !- End Day 1
+    DataCenter Equipment_SCH Week Rule - Jan29-Feb4,  !- Schedule:Week Name 2
+    1,                       !- Start Month 2
+    29,                      !- Start Day 2
+    2,                       !- End Month 2
+    4,                       !- End Day 2
+    DataCenter Equipment_SCH Week Rule - Feb5-Feb25,  !- Schedule:Week Name 3
+    2,                       !- Start Month 3
+    5,                       !- Start Day 3
+    2,                       !- End Month 3
+    25,                      !- End Day 3
+    DataCenter Equipment_SCH Week Rule - Feb26-Mar4,  !- Schedule:Week Name 4
+    2,                       !- Start Month 4
+    26,                      !- Start Day 4
+    3,                       !- End Month 4
+    4,                       !- End Day 4
+    DataCenter Equipment_SCH Week Rule - Mar5-Mar25,  !- Schedule:Week Name 5
+    3,                       !- Start Month 5
+    5,                       !- Start Day 5
+    3,                       !- End Month 5
+    25,                      !- End Day 5
+    DataCenter Equipment_SCH Week Rule - Mar26-Apr1,  !- Schedule:Week Name 6
+    3,                       !- Start Month 6
+    26,                      !- Start Day 6
+    4,                       !- End Month 6
+    1,                       !- End Day 6
+    DataCenter Equipment_SCH Week Rule - Apr2-Apr29,  !- Schedule:Week Name 7
+    4,                       !- Start Month 7
+    2,                       !- Start Day 7
+    4,                       !- End Month 7
+    29,                      !- End Day 7
+    DataCenter Equipment_SCH Week Rule - Apr30-May6,  !- Schedule:Week Name 8
+    4,                       !- Start Month 8
+    30,                      !- Start Day 8
+    5,                       !- End Month 8
+    6,                       !- End Day 8
+    DataCenter Equipment_SCH Week Rule - May7-May27,  !- Schedule:Week Name 9
+    5,                       !- Start Month 9
+    7,                       !- Start Day 9
+    5,                       !- End Month 9
+    27,                      !- End Day 9
+    DataCenter Equipment_SCH Week Rule - May28-Jun3,  !- Schedule:Week Name 10
+    5,                       !- Start Month 10
+    28,                      !- Start Day 10
+    6,                       !- End Month 10
+    3,                       !- End Day 10
+    DataCenter Equipment_SCH Week Rule - Jun4-Jun24,  !- Schedule:Week Name 11
+    6,                       !- Start Month 11
+    4,                       !- Start Day 11
+    6,                       !- End Month 11
+    24,                      !- End Day 11
+    DataCenter Equipment_SCH Week Rule - Jun25-Jul1,  !- Schedule:Week Name 12
+    6,                       !- Start Month 12
+    25,                      !- Start Day 12
+    7,                       !- End Month 12
+    1,                       !- End Day 12
+    DataCenter Equipment_SCH Week Rule - Jul2-Jul29,  !- Schedule:Week Name 13
+    7,                       !- Start Month 13
+    2,                       !- Start Day 13
+    7,                       !- End Month 13
+    29,                      !- End Day 13
+    DataCenter Equipment_SCH Week Rule - Jul30-Aug5,  !- Schedule:Week Name 14
+    7,                       !- Start Month 14
+    30,                      !- Start Day 14
+    8,                       !- End Month 14
+    5,                       !- End Day 14
+    DataCenter Equipment_SCH Week Rule - Aug6-Aug26,  !- Schedule:Week Name 15
+    8,                       !- Start Month 15
+    6,                       !- Start Day 15
+    8,                       !- End Month 15
+    26,                      !- End Day 15
+    DataCenter Equipment_SCH Week Rule - Aug27-Sep2,  !- Schedule:Week Name 16
+    8,                       !- Start Month 16
+    27,                      !- Start Day 16
+    9,                       !- End Month 16
+    2,                       !- End Day 16
+    DataCenter Equipment_SCH Week Rule - Sep3-Sep30,  !- Schedule:Week Name 17
+    9,                       !- Start Month 17
+    3,                       !- Start Day 17
+    9,                       !- End Month 17
+    30,                      !- End Day 17
+    DataCenter Equipment_SCH Week Rule - Oct1-Oct28,  !- Schedule:Week Name 18
+    10,                      !- Start Month 18
+    1,                       !- Start Day 18
+    10,                      !- End Month 18
+    28,                      !- End Day 18
+    DataCenter Equipment_SCH Week Rule - Oct29-Nov4,  !- Schedule:Week Name 19
+    10,                      !- Start Month 19
+    29,                      !- Start Day 19
+    11,                      !- End Month 19
+    4,                       !- End Day 19
+    DataCenter Equipment_SCH Week Rule - Nov5-Nov25,  !- Schedule:Week Name 20
+    11,                      !- Start Month 20
+    5,                       !- Start Day 20
+    11,                      !- End Month 20
+    25,                      !- End Day 20
+    DataCenter Equipment_SCH Week Rule - Nov26-Dec2,  !- Schedule:Week Name 21
+    11,                      !- Start Month 21
+    26,                      !- Start Day 21
+    12,                      !- End Month 21
+    2,                       !- End Day 21
+    DataCenter Equipment_SCH Week Rule - Dec3-Dec31,  !- Schedule:Week Name 22
+    12,                      !- Start Month 22
+    3,                       !- Start Day 22
+    12,                      !- End Month 22
+    31;                      !- End Day 22
+
+  ! ── Lighting Schedule (added 2026-10-09, identical to chilled/air June02) ──
+  Schedule:Day:Interval,
+    DataCenter Lighting_SCH Default, Fractional, No, 24:00, 1;
+  Schedule:Week:Daily,
+    DataCenter Lighting_SCH Week Rule - Jan1-Dec31,
+    DataCenter Lighting_SCH Default, DataCenter Lighting_SCH Default,
+    DataCenter Lighting_SCH Default, DataCenter Lighting_SCH Default,
+    DataCenter Lighting_SCH Default, DataCenter Lighting_SCH Default,
+    DataCenter Lighting_SCH Default, DataCenter Lighting_SCH Default,
+    DataCenter Lighting_SCH Default, DataCenter Lighting_SCH Default,
+    DataCenter Lighting_SCH Default, DataCenter Lighting_SCH Default;
+  Schedule:Year,
+    DataCenter Lighting_SCH, Fractional,
+    DataCenter Lighting_SCH Week Rule - Jan1-Dec31, 1, 1, 12, 31;
+
+  ! ── Building / Zone ───────────────────────────────────────
+
+  Building,
+    DataCenter Warm Water Two Loop,
+    0, City, , , , , ;
+
+  Zone,
+    DataCenter ZN,
+    0, 0, 0, 0, , 1, , , , , , Yes;
+
+  Space,
+    DataCenter,
+    DataCenter ZN,
+    4.2672,
+    557.41824,
+    557.41824,
+    LargeDataCenterHighITE StandaloneDataCenter;
+
+  SpaceList,
+    LargeDataCenterHighITE StandaloneDataCenter,
+    DataCenter;
+
+  ! ── Materials & Constructions ─────────────────────────────
+
+  Material,
+    25mm Stucco,       Smooth,  0.0254, 0.72, 1856, 840, 0.9, 0.7, 0.7;
+  Material,
+    5/8 in. Gypsum Board, MediumSmooth, 0.0159, 0.16, 800, 1090, 0.9, 0.7, 0.7;
+  Material,
+    Metal Roof Surface, Smooth, 0.0008, 45.28, 7824, 500, 0.9, 0.7, 0.7;
+  Material:NoMass,
+    Roof Insulation R-24.52, Smooth, 4.319, 0.9, 0.7, 0.7;
+  Material:NoMass,
+    Wall Insulation R-9.73,  Smooth, 1.713, 0.9, 0.7, 0.7;
+
+  Construction,
+    Exterior Wall,
+    25mm Stucco, 5/8 in. Gypsum Board, Wall Insulation R-9.73, 5/8 in. Gypsum Board;
+
+  Construction,
+    Roof,
+    Metal Roof Surface, Roof Insulation R-24.52, Metal Roof Surface;
+
+  Construction:FfactorGroundFloor,
+    Ground Floor,
+    1.263, 557.41824, 97.536;
+
+  ! ── Surfaces ──────────────────────────────────────────────
+
+  BuildingSurface:Detailed,
+    Floor, Floor, Ground Floor, DataCenter ZN, DataCenter,
+    GroundFCfactorMethod, , NoSun, NoWind, , ,
+    0,0,0,  0,18.288,0,  30.48,18.288,0,  30.48,0,0;
+
+  BuildingSurface:Detailed,
+    Wall South, Wall, Exterior Wall, DataCenter ZN, DataCenter,
+    Outdoors, , SunExposed, WindExposed, , ,
+    0,0,4.2672,  0,0,0,  30.48,0,0,  30.48,0,4.2672;
+
+  BuildingSurface:Detailed,
+    Wall North, Wall, Exterior Wall, DataCenter ZN, DataCenter,
+    Outdoors, , SunExposed, WindExposed, , ,
+    30.48,18.288,4.2672,  30.48,18.288,0,  0,18.288,0,  0,18.288,4.2672;
+
+  BuildingSurface:Detailed,
+    Wall East, Wall, Exterior Wall, DataCenter ZN, DataCenter,
+    Outdoors, , SunExposed, WindExposed, , ,
+    30.48,0,4.2672,  30.48,0,0,  30.48,18.288,0,  30.48,18.288,4.2672;
+
+  BuildingSurface:Detailed,
+    Wall West, Wall, Exterior Wall, DataCenter ZN, DataCenter,
+    Outdoors, , SunExposed, WindExposed, , ,
+    0,18.288,4.2672,  0,18.288,0,  0,0,0,  0,0,4.2672;
+
+  BuildingSurface:Detailed,
+    Roof Surface, Roof, Roof, DataCenter ZN, DataCenter,
+    Outdoors, , SunExposed, WindExposed, , ,
+    30.48,0,4.2672,  30.48,18.288,4.2672,  0,18.288,4.2672,  0,0,4.2672;
+
+  ! ── Lights (added 2026-10-09, identical to chilled/air June02: 6.889 W/m2, always on) ──
+
+  Lights,
+    LargeDataCenterHighITE StandaloneDataCenter Lights,
+    LargeDataCenterHighITE StandaloneDataCenter,
+    DataCenter Lighting_SCH,
+    Watts/Area, , 6.88890266669422, ,
+    0, 0.7, 0.2, 0, General;
+
+  ! ── CPU Power curve: f(cpu_load, T_rack_sup) ──────────────
+  ! Biquadratic: f = -0.035289 + 1.0·x + 0.0015684·y  (x=load, y=T_rack)
+  ! Note: curve is calibrated at ~75°C rack supply; the linear T correction
+  ! is small relative to the load term and remains valid across 65–85°C.
+  Curve:Biquadratic,
+    Curve Biquadratic 3,
+    -0.035289, 1.0, 0, 0.0015684, 0, 0,
+    0, 1.5, -10, 99;
+
+  ! ── ElectricEquipment:ITE:LiquidCooled ───────────────────
+  !
+  !  Warm-water two-loop design (matches diagram: 80% liquid / 20% air):
+  !    FWS supply    : 45°C   (Warm Water Loop, dry cooler)
+  !    FWS return    : ~50°C  (ΔT ≈ 5°C at peak, 2.036 MW / (ρ·cₚ·5°C))
+  !    Rack supply   : 47°C   (FWS supply + 2°C CDU approach)
+  !    Rack return   : ~67°C  (Q_liq/(ṁ_rack·cₚ) ≈ 20°C rise at peak)
+  !    xPU junction  : ~76°C  (within 110°C limit)
+  !    CDU approach  : 2°C    (T_rack_sup − T_fws_sup = 47 − 45)
+  !    FWS flow rate : 0.097 m³/s  (2.036 MW / (ρ·cₚ·5°C))
+  !    Rack flow rate: 0.024 m³/s  (2.036 MW / (ρ·cₚ·20°C))
+  !    Air leakage   : 5%  UPS eff: 94%
+  !    NumUnits = 71 racks (~29 kW/rack); R_jc = 0.001 K/W (rack-level)
+  !      → q_per_unit ≈ 29 kW, ΔT_junc ≈ 29°C, T_junc ≈ 76°C (within 110°C limit)
+
+  ElectricEquipment:ITE:LiquidCooled,
+    DC Warm Water ITE,        !- Name
+    DataCenter,               !- Zone or Space Name
+    Watts/Area,               !- Design Power Input Calculation Method
+    ,                         !- Watts per Unit
+    71,                       !- Number of Units  (~30 kW/rack, 2.14 MW total)
+    3844.69356,               !- Watts per Floor Area {W/m2}
+    DataCenter Equipment_SCH, !- Design Power Input Schedule Name
+    Always On Discrete,       !- CPU Loading Schedule Name
+    ,                         !- CPU Power Curve Name (blank = linear, no temp dependence)
+    45.0,                     !- FWS Design Supply Temperature {C}
+    0.097,                    !- FWS Design Volumetric Flow Rate {m3/s}  (2.036 MW / (ρ·cp·5°C))
+    ITE FWS Inlet Node,       !- FWS Coolant Inlet Node Name
+    ITE FWS Outlet Node,      !- FWS Coolant Outlet Node Name
+    0.024,                    !- Rack Coolant Design Volumetric Flow Rate {m3/s}  (2.036 MW / (ρ·cp·20°C))
+    47.0,                     !- Rack Coolant Design Supply Temperature {C}  (FWS 45°C + 2°C CDU approach)
+    2.0,                      !- CDU Approach Temperature {deltaC}  (T_rack_sup − T_fws_sup = 47 − 45)
+    0.001,                    !- Thermal Resistance Junction-to-Coolant {K/W}
+    110.0,                    !- Maximum Junction Temperature {C}  (75°C supply + ~30°C rise ≈ 105°C)
+    0.20,                     !- Air Side Heat Leakage Fraction (20% — moderate containment, no rear-door HX)
+    0.94,                     !- UPS Efficiency
+    1.0,                      !- Fraction of UPS Losses to Zone (UPS collocated in data hall)
+    ITE-CPU,                  !- CPU End-Use Subcategory
+    ITE-UPS;                  !- UPS End-Use Subcategory
+
+  ! ── Zone HVAC: CRAH on the Room CHW loop ───────────────────
+  !  June08: residual zone load with the INTENDED 20% air-side leakage:
+  !    20% × 2143 kW server power = 429 kW
+  !    UPS losses to zone (1/0.94−1)×2143 kW = 137 kW
+  !    Lights + envelope          = ~4 kW
+  !    → Peak residual ~566 kW (+ ~41 kW CRAH fan heat → ~607 kW coil load)
+  !  Room CHW chiller re-sized 600 kW → 1000 kW to actually absorb this (see chiller).
+
+  ZoneHVAC:EquipmentConnections,
+    DataCenter ZN,
+    DataCenter ZN Equipment List,
+    DataCenter ZN Inlet Node List,
+    DataCenter ZN Exhaust Node List,           !- Zone Air Exhaust Node or NodeList Name (CRAH inlet)
+    DataCenter ZN Zone Air Node,
+    DataCenter ZN Return Node List;
+
+  NodeList, DataCenter ZN Inlet Node List,    DC CRAH Supply Air Node;
+  NodeList, DataCenter ZN Exhaust Node List,  DC CRAH Air Inlet Node;
+  NodeList, DataCenter ZN Return Node List,   DataCenter ZN Return Air Node;
+
+  ZoneHVAC:EquipmentList,
+    DataCenter ZN Equipment List,
+    SequentialLoad,
+    ZoneHVAC:FourPipeFanCoil, DC CRAH,
+    1, 1, , ;
+
+  Sizing:Zone,
+    DataCenter ZN,
+    SupplyAirTemperature, 18.0, 11.11,
+    SupplyAirTemperature, 40.0, 11.11,
+    0.009, 0.004,
+    , , , DesignDay, 0, 0, 0, 0,
+    DesignDay, 0, 0, 0, 0;
+
+  ZoneHVAC:FourPipeFanCoil,
+    DC CRAH,                             !- Name
+    Always On Discrete,                  !- Availability Schedule
+    VariableFanVariableFlow,             !- Capacity Control Method
+    36.0,                                !- Max Supply Air Flow {m3/s}  (~600 kW @ 14°C ΔT_air)
+    0.2,                                 !- Low Speed Ratio
+    0.5,                                 !- Medium Speed Ratio
+    0,                                   !- Max OA Flow (no OA)
+    ,                                    !- OA Schedule
+    DC CRAH Air Inlet Node,              !- Air Inlet (= zone exhaust)
+    DC CRAH Supply Air Node,             !- Air Outlet
+    OutdoorAir:Mixer, DC CRAH OA Mixer,
+    Fan:VariableVolume, DC CRAH Fan,
+    Coil:Cooling:Water, DC CRAH Cooling Coil,
+    0.030,                               !- Max Cold Water Flow {m3/s} (June08: 600→607 kW residual, was 0.024)
+    0.0,                                 !- Min Cold Water Flow
+    0.001,                               !- Cooling Convergence Tolerance
+    Coil:Heating:Electric, DC CRAH Heating Coil,
+    0, 0, 0.001,
+    , , , , ;
+
+  OutdoorAir:Mixer,
+    DC CRAH OA Mixer,
+    DC CRAH Mixed Air Node,
+    DC CRAH OA Inlet Node,
+    DC CRAH Relief Air Node,
+    DC CRAH Air Inlet Node;
+
+  OutdoorAir:NodeList, DC CRAH OA Inlet Node;
+
+  ! Air path in FourPipeFanCoil (blow-through):
+  !   OA Mixer → Fan → Cooling Coil → Heating Coil → Supply
+
+  Fan:VariableVolume,
+    DC CRAH Fan,
+    Always On Discrete,
+    0.65,                                !- Total Efficiency
+    750,                                 !- Pressure Rise {Pa}
+    36.0,                                !- Max Flow {m3/s}
+    Fraction, 0.2, 0,
+    0.93, 1.0,
+    0.0407, 0.0, 0.9821, -0.0228, 0,
+    DC CRAH Mixed Air Node,              !- Inlet
+    DC CRAH Fan Outlet Node,             !- Outlet
+    HVAC;
+
+  Coil:Cooling:Water,
+    DC CRAH Cooling Coil,
+    Always On Discrete,
+    0.030,                               !- Design Water Flow (June08: was 0.024, matched to re-sized loop)
+    36.0,                                !- Design Air Flow
+    8.0,                                 !- Design Inlet Water Temp (matches Room CHW supply)
+    32.0,                                !- Design Inlet Air Temp (zone return)
+    18.0,                                !- Design Outlet Air Temp
+    0.012, 0.010,
+    DC CRAH Coil Water Inlet Node,
+    DC CRAH Coil Water Outlet Node,
+    DC CRAH Fan Outlet Node,             !- Air Inlet
+    DC CRAH Cool Coil Air Out Node,      !- Air Outlet
+    SimpleAnalysis, CrossFlow;
+
+  Coil:Heating:Electric,
+    DC CRAH Heating Coil,
+    Always On Discrete,
+    1.0,
+    1.0,                                 !- Nominal Capacity {W} (disabled — DC never heats)
+    DC CRAH Cool Coil Air Out Node,
+    DC CRAH Supply Air Node;
+
+  SetpointManager:Scheduled,
+    DC CRAH Supply Air SPM, Temperature,
+    DC CRAH Supply Air Temp Sch, DC CRAH Supply Air Node;
+
+  Schedule:Compact,
+    DC CRAH Supply Air Temp Sch, Temperature,
+    Through: 12/31, For: AllDays, Until: 24:00, 18.0;
+
+  ZoneControl:Thermostat,
+    DataCenter ZN Thermostat,
+    DataCenter ZN,
+    DC Thermostat Schedule,
+    ThermostatSetpoint:DualSetpoint,
+    DC Thermostat 1,
+    ,,,,,, 0;
+
+  ScheduleTypeLimits, TstatType, 0, 4, DISCRETE;
+
+  ThermostatSetpoint:DualSetpoint,
+    DC Thermostat 1,
+    DC HTGSETP,
+    DC CLGSETP;
+
+  ! ── Warm-Water Plant Loop ─────────────────────────────────
+  !
+  !  Diagram topology:
+  !    Supply side: FluidCooler:SingleSpeed (Dry Cooler)
+  !                 Entering water: ~47°C (FWS return from ITE)
+  !                 Leaving water setpoint: 45°C
+  !                 Design ambient: 40°C (diagram max)
+  !    Demand side: ElectricEquipment:ITE:LiquidCooled
+  !
+  !  Note: Chiller or EvaporativeFluidCooler could replace the dry cooler
+  !  on the supply branch — see diagram's three rejection options.
+
+  PlantLoop,
+    WW Loop,                  !- Name
+    Water,                    !- Fluid Type
+    ,                         !- User Defined Fluid
+    WW Loop Operation,        !- Plant Equipment Operation Scheme Name
+    WW Supply Outlet Node,    !- Loop Temperature Setpoint Node
+    100,                      !- Max Loop Temperature {C}
+    20,                       !- Min Loop Temperature {C}
+    0.250,                    !- Max Loop Volume Flow Rate {m3/s}
+    0,                        !- Min Loop Volume Flow Rate {m3/s}
+    Autocalculate,            !- Plant Loop Volume {m3}
+    WW Supply Inlet Node,     !- Plant Side Inlet Node
+    WW Supply Outlet Node,    !- Plant Side Outlet Node
+    WW Supply Branches,       !- Plant Side Branch List
+    WW Supply Connectors,     !- Plant Side Connector List
+    WW Demand Inlet Node,     !- Demand Side Inlet Node
+    WW Demand Outlet Node,    !- Demand Side Outlet Node
+    WW Demand Branches,       !- Demand Side Branch List
+    WW Demand Connectors,     !- Demand Side Connector List
+    Optimal,                  !- Load Distribution Scheme
+    ,                         !- Availability Manager List Name
+    SingleSetpoint,           !- Plant Loop Demand Calculation Scheme
+    None,                     !- Common Pipe Simulation
+    None;                     !- Pressure Simulation Type
+
+  SetpointManager:Scheduled,
+    WW Supply Setpoint Manager,
+    Temperature,
+    WW FWS Supply Temp Setpoint,
+    WW Supply Outlet Node;
+
+  ! Supply side: pump + dry cooler (FluidCooler:SingleSpeed)
+
+  BranchList,
+    WW Supply Branches,
+    WW Supply Inlet Branch,
+    WW Dry Cooler Branch,
+    WW Supply Outlet Branch;
+
+  ConnectorList,
+    WW Supply Connectors,
+    Connector:Splitter, WW Supply Splitter,
+    Connector:Mixer,   WW Supply Mixer;
+
+  Connector:Splitter,
+    WW Supply Splitter,
+    WW Supply Inlet Branch,
+    WW Dry Cooler Branch;
+
+  Connector:Mixer,
+    WW Supply Mixer,
+    WW Supply Outlet Branch,
+    WW Dry Cooler Branch;
+
+  Branch,
+    WW Supply Inlet Branch,
+    ,
+    Pump:ConstantSpeed, WW Pump,
+    WW Supply Inlet Node, WW Pump Outlet Node;
+
+  Branch,
+    WW Dry Cooler Branch,
+    ,
+    FluidCooler:SingleSpeed, WW Dry Cooler,
+    WW DC Inlet Node, WW DC Outlet Node;
+
+  Branch,
+    WW Supply Outlet Branch,
+    ,
+    Pipe:Adiabatic, WW Supply Outlet Pipe,
+    WW Supply Outlet Pipe Inlet, WW Supply Outlet Node;
+
+  Pump:ConstantSpeed,
+    WW Pump,
+    WW Supply Inlet Node,     !- Inlet
+    WW Pump Outlet Node,      !- Outlet
+    0.250,                    !- Rated Flow Rate {m3/s}
+    200000,                   !- Rated Pump Head {Pa}
+    Autosize,                 !- Rated Power {W}
+    0.87,                     !- Motor Efficiency
+    0.0,                      !- Fraction of Motor Inefficiencies to Fluid
+    Intermittent,             !- Pump Control Type
+    ;                         !- Pump Flow Rate Schedule
+
+  ! Dry Cooler — ambient −10°C to 40°C
+  ! Sized for: entering water 47°C (FWS return), design air 40°C, 3 MW nominal
+  ! At Tampa July ambient ~30°C: approach = 47−30 = 17°C — well within capacity
+  FluidCooler:SingleSpeed,
+    WW Dry Cooler,            !- Name
+    WW DC Inlet Node,         !- Water Inlet Node Name
+    WW DC Outlet Node,        !- Water Outlet Node Name
+    NominalCapacity,          !- Performance Input Method
+    ,                         !- Design Air Flow Rate U-factor Times Area Value {W/K}
+    3000000,                  !- Nominal Capacity {W}
+    50.0,                     !- Design Entering Water Temperature {C}  (FWS return: 45°C supply + 5°C rise)
+    40.0,                     !- Design Entering Air Temperature {C}  (diagram max ambient)
+    25.0,                     !- Design Entering Air Wetbulb Temperature {C}
+    0.225,                    !- Design Water Flow Rate {m3/s}
+    Autosize,                 !- Design Air Flow Rate {m3/s}
+    Autosize;                 !- Design Air Flow Rate Fan Power {W}
+
+  Pipe:Adiabatic,
+    WW Supply Outlet Pipe,
+    WW Supply Outlet Pipe Inlet,
+    WW Supply Outlet Node;
+
+  ! Demand side: ITE liquid cooled object
+
+  BranchList,
+    WW Demand Branches,
+    WW Demand Inlet Branch,
+    WW ITE LiquidCooled Branch,
+    WW Demand Outlet Branch;
+
+  ConnectorList,
+    WW Demand Connectors,
+    Connector:Splitter, WW Demand Splitter,
+    Connector:Mixer,   WW Demand Mixer;
+
+  Connector:Splitter,
+    WW Demand Splitter,
+    WW Demand Inlet Branch,
+    WW ITE LiquidCooled Branch;
+
+  Connector:Mixer,
+    WW Demand Mixer,
+    WW Demand Outlet Branch,
+    WW ITE LiquidCooled Branch;
+
+  Branch,
+    WW Demand Inlet Branch,
+    ,
+    Pipe:Adiabatic, WW Demand Inlet Pipe,
+    WW Demand Inlet Node, WW Demand Inlet Pipe Outlet;
+
+  Branch,
+    WW ITE LiquidCooled Branch,
+    ,
+    ElectricEquipment:ITE:LiquidCooled, DC Warm Water ITE,
+    ITE FWS Inlet Node, ITE FWS Outlet Node;
+
+  Branch,
+    WW Demand Outlet Branch,
+    ,
+    Pipe:Adiabatic, WW Demand Outlet Pipe,
+    WW Demand Outlet Pipe Inlet, WW Demand Outlet Node;
+
+  Pipe:Adiabatic,
+    WW Demand Inlet Pipe,
+    WW Demand Inlet Node,
+    WW Demand Inlet Pipe Outlet;
+
+  Pipe:Adiabatic,
+    WW Demand Outlet Pipe,
+    WW Demand Outlet Pipe Inlet,
+    WW Demand Outlet Node;
+
+  ! Equipment operation scheme
+
+  PlantEquipmentOperationSchemes,
+    WW Loop Operation,
+    PlantEquipmentOperation:CoolingLoad,
+    WW Cooling Op,
+    Always On Discrete;
+
+  PlantEquipmentOperation:CoolingLoad,
+    WW Cooling Op,
+    0, 99999999,
+    WW Cooling Equipment List;
+
+  PlantEquipmentList,
+    WW Cooling Equipment List,
+    FluidCooler:SingleSpeed, WW Dry Cooler;
+
+  ! ════════════════════════════════════════════════════════════════
+  !  SECONDARY ROOM CHW LOOP  (W3 — for residual zone load)
+  !
+  !  Real warm-water DCs (45°C FWS) cannot cool air to 18–22°C with
+  !  the warm-water loop itself.  A separate small air-cooled chiller
+  !  serves a "Room CHW" loop at 8°C, which feeds the DC CRAH coil
+  !  that handles:
+  !    - 20% rack air leakage (intended design — handled by CRAH, not the liquid loop)
+  !    - UPS losses to zone
+  !    - Lights + envelope
+  !  June08: peak residual ≈ 607 kW.  Chiller re-sized to 1000 kW nameplate
+  !  (covers 607 kW after the ~0.77 hot-OA CapFT de-rate, ~25% margin).
+  !  Chiller is air-cooled → WUE stays at 0 (no makeup water).
+  ! ════════════════════════════════════════════════════════════════
+
+  PlantLoop,
+    Room CHW Loop,                                   !- Name
+    Water,                                           !- Fluid Type
+    ,                                                !- User Defined Fluid
+    Room CHW Loop Operation,                         !- Plant Equipment Operation Scheme Name
+    Room CHW Supply Outlet Node,                     !- Loop Temperature Setpoint Node
+    30,                                              !- Maximum Loop Temperature {C}
+    2,                                               !- Minimum Loop Temperature {C}
+    0.035,                                           !- Maximum Loop Volume Flow Rate {m3/s}  (June08: sized for re-sized chiller, was 0.030)
+    0,                                               !- Minimum Loop Volume Flow Rate {m3/s}
+    Autocalculate,                                   !- Plant Loop Volume {m3}
+    Room CHW Supply Inlet Node,                      !- Plant Side Inlet Node
+    Room CHW Supply Outlet Node,                     !- Plant Side Outlet Node
+    Room CHW Supply Branches,                        !- Plant Side Branch List
+    Room CHW Supply Connectors,                      !- Plant Side Connector List
+    Room CHW Demand Inlet Node,                      !- Demand Side Inlet Node
+    Room CHW Demand Outlet Node,                     !- Demand Side Outlet Node
+    Room CHW Demand Branches,                        !- Demand Side Branch List
+    Room CHW Demand Connectors,                      !- Demand Side Connector List
+    Optimal,                                         !- Load Distribution Scheme
+    ,                                                !- Availability Manager List Name
+    SingleSetpoint,                                  !- Plant Loop Demand Calculation Scheme
+    None,                                            !- Common Pipe Simulation
+    None;                                            !- Pressure Simulation Type
+
+  Sizing:Plant,
+    Room CHW Loop, Cooling, 8.0, 6.0,
+    NonCoincident, 1, None;
+
+  SetpointManager:Scheduled,
+    Room CHW Setpoint Manager, Temperature,
+    Room CHW Supply Temp Sch, Room CHW Supply Outlet Node;
+
+  Schedule:Compact,
+    Room CHW Supply Temp Sch, Temperature,
+    Through: 12/31, For: AllDays, Until: 24:00, 8.0;
+
+  ! ─── Room CHW supply side: pump + air-cooled chiller ───
+
+  BranchList,
+    Room CHW Supply Branches,
+    Room CHW Supply Inlet Branch,
+    Room CHW Chiller Branch,
+    Room CHW Supply Outlet Branch;
+
+  ConnectorList,
+    Room CHW Supply Connectors,
+    Connector:Splitter, Room CHW Supply Splitter,
+    Connector:Mixer,   Room CHW Supply Mixer;
+
+  Connector:Splitter,
+    Room CHW Supply Splitter,
+    Room CHW Supply Inlet Branch,
+    Room CHW Chiller Branch;
+
+  Connector:Mixer,
+    Room CHW Supply Mixer,
+    Room CHW Supply Outlet Branch,
+    Room CHW Chiller Branch;
+
+  Branch,
+    Room CHW Supply Inlet Branch, ,
+    Pump:ConstantSpeed, Room CHW Pump,
+    Room CHW Supply Inlet Node, Room CHW Pump Outlet Node;
+
+  Branch,
+    Room CHW Chiller Branch, ,
+    Chiller:Electric:EIR, Room Chiller,
+    Room Chiller CHW Inlet Node, Room Chiller CHW Outlet Node;
+
+  Branch,
+    Room CHW Supply Outlet Branch, ,
+    Pipe:Adiabatic, Room CHW Supply Outlet Pipe,
+    Room CHW Supply Outlet Pipe Inlet, Room CHW Supply Outlet Node;
+
+  Pump:ConstantSpeed,
+    Room CHW Pump,
+    Room CHW Supply Inlet Node, Room CHW Pump Outlet Node,
+    0.035,                                           !- Rated Flow {m3/s} (June08: was 0.030, matches loop)
+    150000,                                          !- Rated Head {Pa}
+    Autosize,                                        !- Rated Power {W}
+    0.87, 0.0, Intermittent, ;
+
+  ! Air-cooled chiller curves
+  !   CapFT  = 0.95 + 0.02·Tchws − 0.01·Toa
+  !   EIRFT  = 0.50 − 0.02·Tchws + 0.025·Toa
+  !   EIRPLR = 0.15 + 0.55·PLR + 0.30·PLR²
+
+  Curve:Biquadratic,
+    RoomCh CAPFT, 0.95, 0.02, 0.0, -0.01, 0.0, 0.0,
+    3.0, 15.0,                                       !- Tchws min/max {C}
+    10.0, 46.0;                                      !- Toa min/max {C}
+
+  Curve:Biquadratic,
+    RoomCh EIRFT, 0.50, -0.02, 0.0, 0.025, 0.0, 0.0,
+    3.0, 15.0,
+    10.0, 46.0;
+
+  Curve:Quadratic,
+    RoomCh EIRPLR, 0.15, 0.55, 0.30, 0.1, 1.0;
+
+  ! June08 re-size for the 20% air-side leakage load:
+  !   Peak residual = 20%×2143 kW leak (429) + UPS loss (137) = 566 kW,
+  !   + ~41 kW in-airstream CRAH fan heat  →  ~607 kW peak coil load.
+  !   Air-cooled CapFT (0.95+0.02·Tchws−0.01·Toa) ≈ 0.77 at the 34°C Tampa design OA,
+  !   so deliverable = nameplate×0.77.  Need 607/0.77 ≈ 790 kW; with ~25% margin → 1000 kW.
+  !   (Old 600 kW unit delivered only ~460 kW at hot OA → saturated → zone runaway to 176°C.)
+  Chiller:Electric:EIR,
+    Room Chiller,                                    !- Name
+    1000000,                                         !- Reference Capacity {W} (1.0 MW; was 600 kW — covers 607 kW peak after hot-OA de-rate)
+    3.2,                                             !- Reference COP (air-cooled scroll, typical)
+    8.0,                                             !- Reference Leaving CHW Temp {C}
+    35.0,                                            !- Reference Entering Condenser Temp {C} (outdoor air)
+    0.030,                                           !- Reference CHW Flow {m3/s} (607 kW @ ~5°C ΔT; within 0.035 loop)
+    Autosize,                                        !- Reference Condenser Flow (unused for AirCooled)
+    RoomCh CAPFT, RoomCh EIRFT, RoomCh EIRPLR,
+    0.1, 1.0, 1.0, 0.2,
+    Room Chiller CHW Inlet Node,                     !- CHW Inlet
+    Room Chiller CHW Outlet Node,                    !- CHW Outlet
+    Room Chiller Air Inlet Node,                     !- Condenser Inlet (outdoor air node)
+    Room Chiller Air Outlet Node,                    !- Condenser Outlet
+    AirCooled,                                       !- Condenser Type
+    0.04,                                            !- Condenser Fan Power Ratio (W/W, ~4% of capacity)
+    1.0, 2.0, NotModulated;
+
+  OutdoorAir:Node,
+    Room Chiller Air Inlet Node;                     !- Pulls outdoor air for air-cooled condenser
+
+  Pipe:Adiabatic,
+    Room CHW Supply Outlet Pipe,
+    Room CHW Supply Outlet Pipe Inlet, Room CHW Supply Outlet Node;
+
+  ! ─── Room CHW demand side: CRAH coil + bypass ───
+
+  BranchList,
+    Room CHW Demand Branches,
+    Room CHW Demand Inlet Branch,
+    Room CHW CRAH Coil Branch,
+    Room CHW Demand Bypass Branch,
+    Room CHW Demand Outlet Branch;
+
+  ConnectorList,
+    Room CHW Demand Connectors,
+    Connector:Splitter, Room CHW Demand Splitter,
+    Connector:Mixer,   Room CHW Demand Mixer;
+
+  Connector:Splitter,
+    Room CHW Demand Splitter,
+    Room CHW Demand Inlet Branch,
+    Room CHW CRAH Coil Branch,
+    Room CHW Demand Bypass Branch;
+
+  Connector:Mixer,
+    Room CHW Demand Mixer,
+    Room CHW Demand Outlet Branch,
+    Room CHW CRAH Coil Branch,
+    Room CHW Demand Bypass Branch;
+
+  Branch,
+    Room CHW Demand Inlet Branch, ,
+    Pipe:Adiabatic, Room CHW Demand Inlet Pipe,
+    Room CHW Demand Inlet Node, Room CHW Demand Inlet Pipe Outlet;
+
+  Branch,
+    Room CHW CRAH Coil Branch, ,
+    Coil:Cooling:Water, DC CRAH Cooling Coil,
+    DC CRAH Coil Water Inlet Node, DC CRAH Coil Water Outlet Node;
+
+  Branch,
+    Room CHW Demand Bypass Branch, ,
+    Pipe:Adiabatic, Room CHW Demand Bypass Pipe,
+    Room CHW Demand Bypass Inlet Node, Room CHW Demand Bypass Outlet Node;
+
+  Branch,
+    Room CHW Demand Outlet Branch, ,
+    Pipe:Adiabatic, Room CHW Demand Outlet Pipe,
+    Room CHW Demand Outlet Pipe Inlet, Room CHW Demand Outlet Node;
+
+  Pipe:Adiabatic, Room CHW Demand Inlet Pipe,
+    Room CHW Demand Inlet Node, Room CHW Demand Inlet Pipe Outlet;
+  Pipe:Adiabatic, Room CHW Demand Bypass Pipe,
+    Room CHW Demand Bypass Inlet Node, Room CHW Demand Bypass Outlet Node;
+  Pipe:Adiabatic, Room CHW Demand Outlet Pipe,
+    Room CHW Demand Outlet Pipe Inlet, Room CHW Demand Outlet Node;
+
+  PlantEquipmentOperationSchemes,
+    Room CHW Loop Operation,
+    PlantEquipmentOperation:CoolingLoad,
+    Room CHW Cooling Op, Always On Discrete;
+
+  PlantEquipmentOperation:CoolingLoad,
+    Room CHW Cooling Op, 0, 99999999, Room CHW Cooling Equipment List;
+
+  PlantEquipmentList,
+    Room CHW Cooling Equipment List,
+    Chiller:Electric:EIR, Room Chiller;
+
+  ! ── Outputs ───────────────────────────────────────────────
+
+  Output:VariableDictionary, IDF, Unsorted;
+
+  Output:Variable, DC Warm Water ITE, ITE Liquid Cooled CPU Electricity Rate,            Hourly;
+  Output:Variable, DC Warm Water ITE, ITE Liquid Cooled Heat Extraction Rate,            Hourly;
+  Output:Variable, DC Warm Water ITE, ITE Liquid Cooled Zone Sensible Heat Gain Rate,    Hourly;
+  Output:Variable, DC Warm Water ITE, ITE Liquid Cooled Facility Water Supply Temperature,   Hourly;
+  Output:Variable, DC Warm Water ITE, ITE Liquid Cooled Facility Water Return Temperature,   Hourly;
+  Output:Variable, DC Warm Water ITE, ITE Liquid Cooled Facility Water Mass Flow Rate,       Hourly;
+  Output:Variable, DC Warm Water ITE, ITE Liquid Cooled Rack Coolant Supply Temperature,     Hourly;
+  Output:Variable, DC Warm Water ITE, ITE Liquid Cooled Rack Coolant Return Temperature,     Hourly;
+  Output:Variable, DC Warm Water ITE, ITE Liquid Cooled CDU Log Mean Temperature Difference, Hourly;
+  Output:Variable, DC Warm Water ITE, ITE Liquid Cooled CDU Approach Temperature,            Hourly;
+  Output:Variable, DC Warm Water ITE, ITE Liquid Cooled CDU Effectiveness,                   Hourly;
+  Output:Variable, DC Warm Water ITE, ITE Liquid Cooled Peak Chip Junction Temperature,      Hourly;
+
+  Output:Variable, *, Zone Mean Air Temperature, TimeStep;
+
+  ! CRAH + secondary chiller variables
+  Output:Variable, *, Fan Electricity Rate, Hourly;
+  Output:Variable, *, Cooling Coil Total Cooling Rate, Hourly;
+  Output:Variable, *, Chiller Electricity Rate, Hourly;
+  Output:Variable, *, Chiller COP, Hourly;
+  Output:Variable, *, Pump Electricity Rate, Hourly;
+  Output:Variable, *, Fluid Cooler Fan Electricity Rate, Hourly;
+
+  Output:Meter, Electricity:Facility, Annual;
+  Output:Meter, Cooling:Electricity, Annual;
+  Output:Meter, Fans:Electricity, Annual;
+  Output:Meter, Heat Rejection:Electricity, Annual;
+  Output:Meter, Pumps:Electricity, Annual;
+  Output:Meter, DistrictCooling:Facility, Annual;   ! Should be ~0 after CRAH
+  Output:Meter, DistrictHeating:Facility, Annual;
+
+  OutputControl:Table:Style, HTML;
+  Output:Table:SummaryReports, AllSummary;
+  Output:SQLite, SimpleAndTabular;
+
+  ! ============================================================
+  ! Added 2026-08-31: hourly meters for PUE / WUE / EUE time series
+  ! ============================================================
+  Output:Meter, Electricity:Facility, Hourly;
+  Output:Meter, InteriorEquipment:Electricity, Hourly;
+  Output:Meter, ITE-CPU:InteriorEquipment:Electricity, Hourly;
+  Output:Meter, ITE-Fans:InteriorEquipment:Electricity, Hourly;
+  Output:Meter, ITE-UPS:InteriorEquipment:Electricity, Hourly;
+  Output:Meter, Cooling:Electricity, Hourly;
+  Output:Meter, Fans:Electricity, Hourly;
+  Output:Meter, Pumps:Electricity, Hourly;
+  Output:Meter, HeatRejection:Electricity, Hourly;
+  Output:Meter, InteriorLights:Electricity, Hourly;
+  Output:Meter, Humidifier:Electricity, Hourly;
+  Output:Meter, MainsWater:Facility, Hourly;
+  Output:Meter, Water:Facility, Hourly;
+  Output:Variable, Environment, Site Outdoor Air Drybulb Temperature, Hourly;
+  Output:Variable, Environment, Site Outdoor Air Wetbulb Temperature, Hourly;
+

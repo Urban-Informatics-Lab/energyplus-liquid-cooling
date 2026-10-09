@@ -301,6 +301,22 @@ void GetITELiquidCooledInput(EnergyPlusData &state)
             eq.CPUEndUseSubcategory, eq.ZoneName);
 
         SetupOutputVariable(state,
+            "ITE Liquid Cooled UPS Electricity Rate",
+            Constant::Units::W, eq.UPSPower,
+            OutputProcessor::TimeStepType::Zone, OutputProcessor::StoreType::Average,
+            eq.Name);
+
+        SetupOutputVariable(state,
+            "ITE Liquid Cooled UPS Electricity Energy",
+            Constant::Units::J, eq.UPSEnergy,
+            OutputProcessor::TimeStepType::Zone, OutputProcessor::StoreType::Sum,
+            eq.Name,
+            Constant::eResource::Electricity,
+            OutputProcessor::Group::Building,
+            OutputProcessor::EndUseCat::InteriorEquipment,
+            eq.UPSEndUseSubcategory, eq.ZoneName);
+
+        SetupOutputVariable(state,
             "ITE Liquid Cooled Heat Extraction Rate",
             Constant::Units::W, eq.LiquidHeatExtracted,
             OutputProcessor::TimeStepType::Zone, OutputProcessor::StoreType::Average,
@@ -557,7 +573,8 @@ void ITELiquidCooledEquipment::calc(EnergyPlusData &state)
 
     // ── Step 3: UPS losses ───────────────────────────────────────────────────
     Real64 upsInput = (UPSEfficiency > 0.0) ? (CPUPower / UPSEfficiency) : CPUPower;
-    UPSLoss     = (upsInput - CPUPower) * FractionUPSLossesToZone;
+    UPSPower    = upsInput - CPUPower;
+    UPSLoss     = UPSPower * FractionUPSLossesToZone;
     TotalITPower = upsInput;
 
     // ── Step 4: Heat partition ────────────────────────────────────────────────
@@ -638,6 +655,7 @@ void ITELiquidCooledEquipment::reportVars(EnergyPlusData &state)
 {
     const Real64 dt = state.dataGlobal->TimeStepZoneSec; // [s]
     CPUEnergy                 = CPUPower            * dt;
+    UPSEnergy                 = UPSPower            * dt;
     LiquidHeatExtractedEnergy = LiquidHeatExtracted * dt;
     ZoneConvGainEnergy        = ZoneConvGainRate    * dt;
 }

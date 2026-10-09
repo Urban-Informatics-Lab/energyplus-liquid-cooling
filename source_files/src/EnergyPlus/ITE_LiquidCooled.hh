@@ -175,6 +175,7 @@ namespace ITELiquidCooled {
         Real64 CPULoadFraction     = 1.0;  // from schedule
         Real64 CPUPower            = 0.0;  // [W]
         Real64 UPSLoss             = 0.0;  // [W]
+        Real64 UPSPower            = 0.0;  // [W] UPS loss electricity
         Real64 TotalITPower        = 0.0;  // [W] = CPUPower / UPSEfficiency
 
         // Heat split
@@ -206,6 +207,7 @@ namespace ITELiquidCooled {
 
         // --- Energy accumulators -----------------------------------------------
         Real64 CPUEnergy                 = 0.0; // [J]
+        Real64 UPSEnergy                 = 0.0; // [J]
         Real64 LiquidHeatExtractedEnergy = 0.0; // [J]
         Real64 ZoneConvGainEnergy        = 0.0; // [J]
 
