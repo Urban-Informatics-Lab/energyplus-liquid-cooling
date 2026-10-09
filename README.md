@@ -35,9 +35,11 @@ Developed for the NatLabRockies EnergyPlus v26.1 fork.
 ### What's in this directory
 
 ```
-├── README_ITE_LiquidCooled.md    ← this file
-├── WINDOWS_BUILD_GUIDE.md    ← instructions for installing in Windows 
-├── test_liquid_cooled_ite.idf    ← working example simulation
+├── README.md                     ← this file
+├── WINDOWS_BUILD_GUIDE.md        ← instructions for installing in Windows
+├── case_study/                   ← Tampa case-study IDFs (air, chilled water, warm water)
+├── scripts/compute_metrics.py    ← annual PUE / WUE / EUE from eplusout.sql
+├── weather/                      ← Tampa TMY3 weather file
 ├── binary_files/                 ← drop-in replacement for Mac ARM users
 │   ├── energyplus                   compiled executable (Mac ARM64)
 │   ├── libenergyplusapi.26.1.0.dylib  shared library containing simulation code
@@ -120,91 +122,40 @@ Build time is ~2 minutes (only the changed files recompile).
 
 ---
 
-## Running the example simulation
+## Case study: Tampa, FL (annual, TMY3)
 
-A complete working IDF is included: `test_liquid_cooled_ite.idf`
+Three configurations of the same 557 m² data hall (2,143 kW design IT load, 71 racks, UPS efficiency 0.94, lighting 6.89 W/m²):
 
-- Single-zone 557 m² Tampa FL datacenter
-- 2.5 MW IT load (5382 W/m², 250 racks)
-- IT power schedule: `DataCenter Equipment_SCH` — matches the reference air-cooled IDF, ramping from ~25% to 100% load across the year
-- Chilled water loop at 18°C supply, DistrictCooling source
-- Full-year simulation (2007, Tampa TMY3)
+| IDF | Cooling | Heat rejection |
+|---|---|---|
+| `case_study/air_cooled.idf` | Air-cooled baseline (`ElectricEquipment:ITE:AirCooled`) | Water-cooled chiller + cooling tower |
+| `case_study/chilled_water.idf` | Direct-to-chip, 12 °C facility water | Water-cooled chiller (COP 5.5) + cooling tower |
+| `case_study/warm_water.idf` | Direct-to-chip, 45 °C facility water | Dry cooler; air-cooled room chiller for the CRAH |
+
+In both liquid-cooled cases 20 % of the chip heat leaks to the room air and is removed by a CRAH.
 
 ```bash
-energyplus \
-  -w /path/to/USA_FL_Tampa.Intl.AP.722110_TMY3.epw \
-  -d ./output \
-  test_liquid_cooled_ite.idf
+energyplus -w weather/USA_FL_Tampa.Intl.AP.722110_TMY3.epw -d output/warm_water case_study/warm_water.idf
+python scripts/compute_metrics.py output/warm_water/eplusout.sql
 ```
-
-Weather files ship with EnergyPlus at:
-`/Applications/EnergyPlus-26-1-0/WeatherData/`
 
 Expected result: `EnergyPlus Completed Successfully — 0 Severe Errors`
 
----
+| | Air-cooled | Chilled water | Warm water |
+|---|---|---|---|
+| Facility electricity (MWh/yr) | 23,633 | 15,339 | 14,668 |
+| IT electricity (MWh/yr) | 16,508 | 11,753 | 11,753 |
+| Annual PUE | 1.43 | 1.31 | 1.25 |
+| Peak hourly PUE | 1.68 | 1.50 | 1.48 |
+| WUE (L/kWh) | 3.45 | 2.46 | 0 |
+| EUE | 0.50 | 0.77 | 0.80 |
+| EUE, 100 % liquid-heat reuse | — | 1.38 | 1.44 |
 
-## Energy comparison: liquid-cooled vs air-cooled (Tampa, annual)
+`compute_metrics.py` uses E_IT = ITE-CPU + ITE-Fans (IT load at the UPS output), PUE = site electricity / E_IT, WUE = site water / E_IT, and EUE = ITE-CPU / site electricity. Peak PUE needs the hourly meters already requested in the case-study IDFs. EUE with reuse additionally needs:
 
-The table below compares `test_liquid_cooled_ite.idf` against the reference
-`air-cooling-data-center.idf` from the EnergyPlus example files, both run with
-Tampa TMY3 weather for a full year. Both use identical floor area (557 m²),
-power density (5382 W/m²), and IT power schedule (`DataCenter Equipment_SCH`).
-
-| End use | Air-cooled (GWh) | Liquid-cooled (GWh) |
-|---|---|---|
-| IT CPU electricity | 11,753 | 9,778 |
-| IT server fans | 4,725 | 0 — no fans needed |
-| Chiller / cooling electricity | 2,923 | 0 — absorbed by District Cooling |
-| HVAC (CRAH) fans | 1,113 | 0 |
-| Pumps | 1,027 | 387 |
-| **Total electricity** | **21,575** | **10,165** |
-| District Cooling (heat to water loop) | 0 | 10,596 |
-
-**~53% reduction in facility electricity.** The remaining IT CPU gap (~17%) is
-physically correct: the CPU power curve `f(load, T_rack_supply)` evaluates at
-coolant temperature (~18–22 °C) rather than supply air temperature (~22.5 °C),
-so the biquadratic returns slightly less power at the same load fraction — the
-chips run cooler with liquid cooling.
-
----
-
-## Simulation results: Tampa chilled-water case (annual, TMY3)
-
-IDF: `test_liquid_cooled_ite.idf` — 557 m² datacenter, 2.5 MW IT, chilled water at 18°C supply, 2°C CDU approach, DistrictCooling source.
-
+```idf
+Output:Variable, *, ITE Liquid Cooled Heat Extraction Energy, Hourly;
 ```
-energyplus -w USA_FL_Tampa.Intl.AP.722110_TMY3.epw -d output test_liquid_cooled_ite.idf
-EnergyPlus Completed Successfully — 0 Severe Errors
-```
-
-| End use | GJ/yr | GWh/yr |
-|---|---|---|
-| Interior Equipment (IT CPU) | 42,643 | 11,845 |
-| Pumps | 1,394 | 387 |
-| **Total electricity** | **44,037** | **12,232** |
-| District Cooling (heat to water loop) | 45,972 | 12,770 |
-
----
-
-## Simulation results: warm water two-loop case (annual, TMY3)
-
-IDF: `../warm_water_two_loop/test_warm_water_two_loop.idf` — same datacenter, warm water loop at 45°C supply, 30°C CDU approach (rack supply 75°C), dry cooler heat rejection.
-
-```
-energyplus -w USA_FL_Tampa.Intl.AP.722110_TMY3.epw -d output test_warm_water_two_loop.idf
-EnergyPlus Completed Successfully — 0 Severe Errors
-```
-
-| End use | GJ/yr | GWh/yr |
-|---|---|---|
-| Interior Equipment (IT CPU) | 54,570 | 15,158 |
-| Pumps | 2,324 | 645 |
-| Heat Rejection (dry cooler fan) | 170 | 47 |
-| **Total electricity** | **57,064** | **15,851** |
-| District Cooling (dry cooler heat rejection) | 2,623 | 729 |
-
-The warm water case eliminates the chiller entirely — heat is rejected via a dry cooler. The higher IT electricity reflects the lack of a temperature-dependent CPU curve in this IDF (no biquadratic benefit from cooler chips); with one added the gap would narrow.
 
 ---
 
@@ -251,7 +202,7 @@ Branch,
   ITE FWS Inlet Node, ITE FWS Outlet Node;
 ```
 
-That branch goes in the demand-side BranchList. The supply side can be a chiller, DistrictCooling, or any other plant equipment. See `test_liquid_cooled_ite.idf` for a complete wired-up example.
+That branch goes in the demand-side BranchList. The supply side can be a chiller, DistrictCooling, or any other plant equipment. See `case_study/chilled_water.idf` for a complete wired-up example.
 
 ---
 
@@ -273,6 +224,7 @@ All variables are available at any reporting frequency (TimeStep, Hourly, Daily,
 
 ```idf
 Output:Variable, *, ITE Liquid Cooled CPU Electricity Rate, Hourly;
+Output:Variable, *, ITE Liquid Cooled UPS Electricity Rate, Hourly;
 Output:Variable, *, ITE Liquid Cooled Heat Extraction Rate, Hourly;
 Output:Variable, *, ITE Liquid Cooled Zone Sensible Heat Gain Rate, Hourly;
 Output:Variable, *, ITE Liquid Cooled Facility Water Supply Temperature, Hourly;

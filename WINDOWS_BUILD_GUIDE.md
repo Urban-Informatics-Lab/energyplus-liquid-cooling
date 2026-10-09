@@ -267,7 +267,7 @@ Should print: `EnergyPlus, Version 26.1.0`
 "C:\EnergyPlusV26-1-0\energyplus.exe" ^
   -w "C:\EnergyPlusV26-1-0\WeatherData\USA_FL_Tampa.Intl.AP.722110_TMY3.epw" ^
   -d output ^
-  test_liquid_cooled_ite.idf
+  case_study\chilled_water.idf
 ```
 
 Expected result: `EnergyPlus Completed Successfully — 0 Severe Errors`
