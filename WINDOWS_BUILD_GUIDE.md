@@ -54,12 +54,12 @@ Windows Smart App Control blocks unsigned executables, including ones you compil
 Open **Command Prompt** (search "cmd" in the Start menu) and run:
 
 ```
-git clone https://github.com/NREL/EnergyPlus.git
+git clone https://github.com/NatLabRockies/EnergyPlus.git
 cd EnergyPlus
 git checkout v26.1.0
 ```
 
-**Important:** Use `https://github.com/NREL/EnergyPlus.git` (the official NREL repo), not the NatLabRockies fork listed in the original guide. The fork does not have a v26.1 tag. The correct tag is `v26.1.0` (with the trailing `.0`).
+**Important:** The tag is `v26.1.0`, with the trailing `.0`. The NatLabRockies fork and NREL/EnergyPlus both carry this tag at the same commit (`6f2e40d`), so either clone gives identical source.
 
 This downloads the source into a folder called `EnergyPlus` wherever you ran the command. It will take a few minutes.
 
@@ -267,7 +267,7 @@ Should print: `EnergyPlus, Version 26.1.0`
 "C:\EnergyPlusV26-1-0\energyplus.exe" ^
   -w "C:\EnergyPlusV26-1-0\WeatherData\USA_FL_Tampa.Intl.AP.722110_TMY3.epw" ^
   -d output ^
-  test_liquid_cooled_ite.idf
+  case_study\chilled_water.idf
 ```
 
 Expected result: `EnergyPlus Completed Successfully — 0 Severe Errors`

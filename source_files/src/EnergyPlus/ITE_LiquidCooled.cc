@@ -110,7 +110,7 @@ void GetITELiquidCooledInput(EnergyPlusData &state)
         eq.Name = cAlphaArgs(1);
         if (Util::FindItemInList(eq.Name, equipment,
                                  &ITELiquidCooledEquipment::Name, idx) > 0) {
-            ShowSevereError(state, format("{}: duplicate name \"{}\"", routineName, eq.Name));
+            ShowSevereError(state, EnergyPlus::format("{}: duplicate name \"{}\"", routineName, eq.Name));
             errorsFound = true;
         }
 
@@ -125,7 +125,7 @@ void GetITELiquidCooledInput(EnergyPlusData &state)
             eq.SpaceNum = Util::FindItemInList(
                 eq.ZoneName, state.dataHeatBal->space);
             if (eq.SpaceNum == 0) {
-                ShowSevereError(state, format("{}: Zone or Space \"{}\" not found for object \"{}\"",
+                ShowSevereError(state, EnergyPlus::format("{}: Zone or Space \"{}\" not found for object \"{}\"",
                                               routineName, eq.ZoneName, eq.Name));
                 errorsFound = true;
             } else {
@@ -145,7 +145,7 @@ void GetITELiquidCooledInput(EnergyPlusData &state)
         } else if (Util::SameString(method, "Watts/Area")) {
             eq.powerMethod = DesignPowerMethod::WattsPerArea;
         } else {
-            ShowSevereError(state, format("{}: unknown Design Power Method \"{}\" for \"{}\" (expected Watts/Unit or Watts/Area)",
+            ShowSevereError(state, EnergyPlus::format("{}: unknown Design Power Method \"{}\" for \"{}\" (expected Watts/Unit or Watts/Area)",
                                           routineName, method, eq.Name));
             errorsFound = true;
         }
@@ -161,14 +161,14 @@ void GetITELiquidCooledInput(EnergyPlusData &state)
 
         if (eq.DesignTotalPower <= 0.0) {
             ShowWarningError(state,
-                format("{}: Design Total Power <= 0 for \"{}\"; check inputs.", routineName, eq.Name));
+                EnergyPlus::format("{}: Design Total Power <= 0 for \"{}\"; check inputs.", routineName, eq.Name));
         }
 
         // ── A4: Design Power Input Schedule ──────────────────────────────────
         if (!lAlphaBlanks(4)) {
             eq.OperSched = Sched::GetSchedule(state, cAlphaArgs(4));
             if (eq.OperSched == nullptr) {
-                ShowSevereError(state, format("{}: schedule \"{}\" not found for \"{}\"",
+                ShowSevereError(state, EnergyPlus::format("{}: schedule \"{}\" not found for \"{}\"",
                                               routineName, cAlphaArgs(4), eq.Name));
                 errorsFound = true;
             }
@@ -178,7 +178,7 @@ void GetITELiquidCooledInput(EnergyPlusData &state)
         if (!lAlphaBlanks(5)) {
             eq.CPULoadSched = Sched::GetSchedule(state, cAlphaArgs(5));
             if (eq.CPULoadSched == nullptr) {
-                ShowSevereError(state, format("{}: CPU loading schedule \"{}\" not found for \"{}\"",
+                ShowSevereError(state, EnergyPlus::format("{}: CPU loading schedule \"{}\" not found for \"{}\"",
                                               routineName, cAlphaArgs(5), eq.Name));
                 errorsFound = true;
             }
@@ -189,7 +189,7 @@ void GetITELiquidCooledInput(EnergyPlusData &state)
             eq.CPUPowerFuncLoadTempCurveNum =
                 Curve::GetCurveIndex(state, cAlphaArgs(6));
             if (eq.CPUPowerFuncLoadTempCurveNum == 0) {
-                ShowSevereError(state, format("{}: curve \"{}\" not found for \"{}\"",
+                ShowSevereError(state, EnergyPlus::format("{}: curve \"{}\" not found for \"{}\"",
                                               routineName, cAlphaArgs(6), eq.Name));
                 errorsFound = true;
             }
@@ -202,7 +202,7 @@ void GetITELiquidCooledInput(EnergyPlusData &state)
         eq.FWSDesignVolFlowRate = rNumericArgs(5);
         if (eq.FWSDesignVolFlowRate <= 0.0) {
             ShowSevereError(state,
-                format("{}: FWS Volumetric Flow Rate must be > 0 for \"{}\"", routineName, eq.Name));
+                EnergyPlus::format("{}: FWS Volumetric Flow Rate must be > 0 for \"{}\"", routineName, eq.Name));
             errorsFound = true;
         }
 
@@ -237,7 +237,7 @@ void GetITELiquidCooledInput(EnergyPlusData &state)
         eq.RackDesignVolFlowRate = rNumericArgs(6);
         if (eq.RackDesignVolFlowRate <= 0.0) {
             ShowSevereError(state,
-                format("{}: Rack Coolant Volumetric Flow Rate must be > 0 for \"{}\"",
+                EnergyPlus::format("{}: Rack Coolant Volumetric Flow Rate must be > 0 for \"{}\"",
                         routineName, eq.Name));
             errorsFound = true;
         }
@@ -259,7 +259,7 @@ void GetITELiquidCooledInput(EnergyPlusData &state)
             eq.AirLeakageFraction = rNumericArgs(11);
             if (eq.AirLeakageFraction < 0.0 || eq.AirLeakageFraction > 1.0) {
                 ShowSevereError(state,
-                    format("{}: Air Leakage Fraction must be 0-1 for \"{}\"", routineName, eq.Name));
+                    EnergyPlus::format("{}: Air Leakage Fraction must be 0-1 for \"{}\"", routineName, eq.Name));
                 errorsFound = true;
             }
         }
@@ -269,7 +269,7 @@ void GetITELiquidCooledInput(EnergyPlusData &state)
             eq.UPSEfficiency = rNumericArgs(12);
             if (eq.UPSEfficiency <= 0.0 || eq.UPSEfficiency > 1.0) {
                 ShowSevereError(state,
-                    format("{}: UPS Efficiency must be (0,1] for \"{}\"", routineName, eq.Name));
+                    EnergyPlus::format("{}: UPS Efficiency must be (0,1] for \"{}\"", routineName, eq.Name));
                 errorsFound = true;
             }
         }
@@ -299,6 +299,22 @@ void GetITELiquidCooledInput(EnergyPlusData &state)
             OutputProcessor::Group::Building,
             OutputProcessor::EndUseCat::InteriorEquipment,
             eq.CPUEndUseSubcategory, eq.ZoneName);
+
+        SetupOutputVariable(state,
+            "ITE Liquid Cooled UPS Electricity Rate",
+            Constant::Units::W, eq.UPSPower,
+            OutputProcessor::TimeStepType::Zone, OutputProcessor::StoreType::Average,
+            eq.Name);
+
+        SetupOutputVariable(state,
+            "ITE Liquid Cooled UPS Electricity Energy",
+            Constant::Units::J, eq.UPSEnergy,
+            OutputProcessor::TimeStepType::Zone, OutputProcessor::StoreType::Sum,
+            eq.Name,
+            Constant::eResource::Electricity,
+            OutputProcessor::Group::Building,
+            OutputProcessor::EndUseCat::InteriorEquipment,
+            eq.UPSEndUseSubcategory, eq.ZoneName);
 
         SetupOutputVariable(state,
             "ITE Liquid Cooled Heat Extraction Rate",
@@ -399,7 +415,7 @@ void GetITELiquidCooledInput(EnergyPlusData &state)
     state.dataITELiquidCooled->zoneConvGainW.assign(state.dataGlobal->NumOfZones, 0.0);
 
     if (errorsFound) {
-        ShowFatalError(state, format("{}: Aborting due to input errors.", routineName));
+        ShowFatalError(state, EnergyPlus::format("{}: Aborting due to input errors.", routineName));
     }
 }
 
@@ -415,7 +431,7 @@ ITELiquidCooledEquipment *ITELiquidCooledEquipment::factory(EnergyPlusData &stat
         if (Util::SameString(eq.Name, objectName)) return &eq;
     }
     ShowFatalError(state,
-        format("ITELiquidCooledEquipment::factory: object \"{}\" not found.", objectName));
+        EnergyPlus::format("ITELiquidCooledEquipment::factory: object \"{}\" not found.", objectName));
     return nullptr;
 }
 
@@ -468,7 +484,7 @@ void ITELiquidCooledEquipment::init(EnergyPlusData &state)
             CoolantInletNodeNum);
         if (errFlag) {
             ShowFatalError(state,
-                format("{}: plant scan failed for \"{}\".", routineName, Name));
+                EnergyPlus::format("{}: plant scan failed for \"{}\".", routineName, Name));
         }
         MyPlantScanFlag = false;
     }
@@ -557,7 +573,8 @@ void ITELiquidCooledEquipment::calc(EnergyPlusData &state)
 
     // ── Step 3: UPS losses ───────────────────────────────────────────────────
     Real64 upsInput = (UPSEfficiency > 0.0) ? (CPUPower / UPSEfficiency) : CPUPower;
-    UPSLoss     = (upsInput - CPUPower) * FractionUPSLossesToZone;
+    UPSPower    = upsInput - CPUPower;
+    UPSLoss     = UPSPower * FractionUPSLossesToZone;
     TotalITPower = upsInput;
 
     // ── Step 4: Heat partition ────────────────────────────────────────────────
@@ -596,7 +613,7 @@ void ITELiquidCooledEquipment::calc(EnergyPlusData &state)
     RackMassFlowRate = RackDesignVolFlowRate * rackDensity; // fixed at design value
 
     Real64 C_rack = RackMassFlowRate * rackCp; // [W/K]
-    Real64 C_fws  = FWSMassFlowRate  * FWSCoolantCp;
+    [[maybe_unused]] Real64 C_fws  = FWSMassFlowRate  * FWSCoolantCp;
 
     // ── Step 7: External CDU heat exchanger — fixed approach temperature ──────
     //   T_rack_sup = T_fws_sup + ΔT_approach  (CDUApproachTemp from input)
@@ -638,6 +655,7 @@ void ITELiquidCooledEquipment::reportVars(EnergyPlusData &state)
 {
     const Real64 dt = state.dataGlobal->TimeStepZoneSec; // [s]
     CPUEnergy                 = CPUPower            * dt;
+    UPSEnergy                 = UPSPower            * dt;
     LiquidHeatExtractedEnergy = LiquidHeatExtracted * dt;
     ZoneConvGainEnergy        = ZoneConvGainRate    * dt;
 }
@@ -696,7 +714,7 @@ void SimITELiquidCooled(EnergyPlusData &state,
             &ITELiquidCooledEquipment::Name);
         if (found == 0) {
             ShowFatalError(state,
-                format("SimITELiquidCooled: component \"{}\" not found.", compName));
+                EnergyPlus::format("SimITELiquidCooled: component \"{}\" not found.", compName));
         }
         CompIndex = found; // 1-based
     }
