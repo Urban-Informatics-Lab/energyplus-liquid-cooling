@@ -169,7 +169,9 @@ energyplus -w weather/USA_FL_Tampa.Intl.AP.722110_TMY3.epw -d output/warm_water 
 python scripts/compute_metrics.py output/warm_water/eplusout.sql
 ```
 
-Expected result: `EnergyPlus Completed Successfully — 0 Severe Errors`
+Each case should finish with `0 Severe Errors`. Warnings are expected — 28, 11 and 80
+for air-cooled, chilled-water and warm-water respectively. The metrics script then
+prints the values in the table below.
 
 | | Air-cooled | Chilled water | Warm water |
 |---|---|---|---|
