@@ -141,6 +141,22 @@ The build products land in `build/Products/`. To refresh `binary_files/`:
 cp build/Products/energyplus-26.1.0        binary_files/energyplus
 cp build/Products/libenergyplusapi.26.1.0.dylib  binary_files/
 cp build/Products/Energy+.idd build/Products/Energy+.schema.epJSON binary_files/
+
+# REQUIRED: the staged executable carries an absolute rpath pointing into your
+# build tree, so it aborts on any other Mac with
+#   dyld: Library not loaded: @rpath/libenergyplusapi.26.1.0.dylib
+# Rewrite it to the executable's own folder and re-sign (Apple Silicon kills an
+# edited Mach-O that is not re-signed):
+OLD_RPATH=$(otool -l binary_files/energyplus | awk '/LC_RPATH/{getline; getline; print $2; exit}')
+install_name_tool -rpath "$OLD_RPATH" @executable_path binary_files/energyplus
+codesign --force --sign - binary_files/energyplus
+```
+
+Verify the rpath is portable before shipping — it must print `@executable_path`
+and no absolute path:
+
+```bash
+otool -l binary_files/energyplus | grep -A2 LC_RPATH
 ```
 
 Confirm the build actually picked up your changes before shipping it — e.g. for
